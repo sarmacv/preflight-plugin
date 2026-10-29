@@ -160,7 +160,7 @@
   },
   "devDependencies": {
     "@resvg/resvg-js": "^2.6.2",
-    "@types/node": "^22.13.0",
+    "@types/node": "^26.6.5",
     "@types/picomatch": "^4.0.3",
     "@types/vscode": "~1.100.0",
     "@vscode/vsce": "^4.1.0",
