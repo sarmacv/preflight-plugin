@@ -1,0 +1,11 @@
+src/**
+test/**
+scripts/**
+node_modules/**
+.vscode/**
+.claude/**
+tsconfig.json
+**/*.map
+media/icon@256.png
+media/wordmark-*.svg
+*.vsix

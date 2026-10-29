@@ -1,0 +1,194 @@
+{
+  "name": "preflight",
+  "displayName": "Preflight",
+  "description": "Check. Fix. Ship. Scan GitHub repos against org standards and open fix PRs.",
+  "version": "0.1.1",
+  "publisher": "internal",
+  "private": true,
+  "license": "UNLICENSED",
+  "icon": "media/icon.png",
+  "engines": {
+    "vscode": "^1.100.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "preflight",
+          "title": "Preflight",
+          "icon": "media/activity.svg"
+        }
+      ]
+    },
+    "views": {
+      "preflight": [
+        {
+          "id": "preflight.launcher",
+          "name": "Preflight"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "preflight.launcher",
+        "contents": "[$(check) Open Preflight](command:preflight.open)"
+      }
+    ],
+    "commands": [
+      {
+        "command": "preflight.open",
+        "title": "Open",
+        "category": "Preflight",
+        "icon": "$(check)"
+      },
+      {
+        "command": "preflight.setSonarToken",
+        "title": "Set Sonar Token",
+        "category": "Preflight",
+        "icon": "$(key)"
+      },
+      {
+        "command": "preflight.clearSonarToken",
+        "title": "Clear Sonar Token",
+        "category": "Preflight"
+      },
+      {
+        "command": "preflight.probeModels",
+        "title": "Probe Models",
+        "category": "Preflight",
+        "icon": "$(beaker)"
+      }
+    ],
+    "configuration": {
+      "title": "Preflight",
+      "properties": {
+        "preflight.model.default": {
+          "type": "string",
+          "enum": [
+            "copilot",
+            "claude",
+            "codex"
+          ],
+          "enumItemLabels": [
+            "Copilot",
+            "Claude",
+            "Codex"
+          ],
+          "default": "copilot",
+          "order": 0,
+          "description": "Model used for AI checks and fixes. Only models your Copilot plan offers can be selected."
+        },
+        "preflight.sonar.url": {
+          "type": "string",
+          "default": "",
+          "format": "uri",
+          "order": 10,
+          "description": "Base URL of your self-hosted SonarQube server, e.g. https://sonar.example.com. Store the token with the \"Preflight: Set Sonar Token\" command; it is kept in VS Code secret storage."
+        },
+        "preflight.coverage.threshold": {
+          "type": "number",
+          "default": 80,
+          "minimum": 0,
+          "maximum": 100,
+          "order": 11,
+          "description": "Minimum overall line coverage (percent) for the coverage check to pass."
+        },
+        "preflight.coverage.maxFiles": {
+          "type": "integer",
+          "default": 5,
+          "minimum": 1,
+          "maximum": 25,
+          "order": 12,
+          "description": "Maximum number of lowest-coverage files the Coverage PR writes tests for in one run."
+        },
+        "preflight.branch.template": {
+          "type": "string",
+          "default": "preflight/{type}/{date}-{shortid}",
+          "order": 20,
+          "markdownDescription": "Template for PR branch names. Placeholders: `{user}`, `{repo}`, `{check-or-category}`, `{date}`, `{shortid}`, `{type}` (`fixes` or `coverage`)."
+        },
+        "preflight.branch.pattern": {
+          "type": "string",
+          "default": "",
+          "order": 21,
+          "markdownDescription": "Optional regular expression every generated branch name must match, e.g. `^(feature|chore)/[a-z0-9._-]+$`."
+        },
+        "preflight.staleBranchDays": {
+          "type": "integer",
+          "default": 90,
+          "minimum": 1,
+          "order": 30,
+          "description": "A branch with no commits for this many days counts as stale."
+        },
+        "preflight.license.allow": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "order": 40,
+          "markdownDescription": "SPDX licence IDs dependencies may use. Empty means no allow list."
+        },
+        "preflight.license.deny": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "AGPL-3.0",
+            "AGPL-3.0-only",
+            "AGPL-3.0-or-later",
+            "SSPL-1.0"
+          ],
+          "order": 41,
+          "markdownDescription": "SPDX licence IDs that fail the licence compliance check."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "watch": "node scripts/build.mjs --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "icons": "node scripts/render-icon.mjs",
+    "package": "node scripts/build.mjs --production && vsce package --no-dependencies --allow-missing-repository --no-rewrite-relative-links"
+  },
+  "devDependencies": {
+    "@resvg/resvg-js": "^2.6.2",
+    "@types/node": "^22.13.0",
+    "@types/picomatch": "^4.0.3",
+    "@types/vscode": "~1.100.0",
+    "@vscode/vsce": "^4.1.0",
+    "esbuild": "^0.28.2",
+    "msw": "^3.0.3",
+    "typescript": "~5.9.0",
+    "vitest": "^5.0.5"
+  },
+  "dependencies": {
+    "@octokit/plugin-retry": "^8.1.1",
+    "@octokit/plugin-throttling": "^11.0.5",
+    "@octokit/rest": "^22.0.1",
+    "@preact/signals": "^2.11.4",
+    "@vscode/codicons": "^0.0.46-24",
+    "picomatch": "^4.0.7",
+    "preact": "^10.29.8",
+    "yaml": "^2.9.1",
+    "zod": "^4.6.7"
+  },
+  "keywords": [
+    "github",
+    "compliance",
+    "scorecard",
+    "pull-request",
+    "copilot"
+  ],
+  "galleryBanner": {
+    "color": "#13233A",
+    "theme": "dark"
+  }
+}
