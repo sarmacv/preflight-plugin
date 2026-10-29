@@ -9,3 +9,7 @@ tsconfig.json
 media/icon@256.png
 media/wordmark-*.svg
 *.vsix
+.github/**
+AGENTS.md
+CONTRIBUTING.md
+SECURITY.md

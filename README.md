@@ -64,10 +64,11 @@ Preflight finds each repository's Sonar project from `sonar.projectKey` in `sona
 ## Use it
 
 1. **Select repositories.** Search, filter by organisation, and tick repositories (Space toggles, Ctrl/Cmd+A selects all shown). Each selected repository scans its default branch. Once two or more are selected, click a branch chip to scan a different branch.
-2. **Scan** (▶ or Enter). Repositories are scanned one at a time. Stop (■ or Esc) keeps everything already finished.
-3. **Read results.** Each repository gets a score out of 100 and is **Passing** (no critical or high severity failures) or **Failing**. Critical failures are pinned to the top. A check whose prerequisite failed is skipped ("Needs … to pass first") so the same problem isn't reported twice. Categories with failures open automatically. Click a check to see its evidence. Hover a category or check to re-run just that part.
-4. **Filter** (funnel icon) to show failures only, or to choose which categories and checks the next scan runs.
-5. **Fix.** Click **Fix** on a repository card to fix that repository, or the wand in the top bar to fix every scanned repository. A wand next to a failed check means Preflight can fix it. You get a preview first; nothing is written until you confirm.
+2. **Choose checks.** Open the **Checks** tab at the top of the left pane. Every check is listed by category; tick a category or individual checks, use the select-all and clear buttons, or search. The tab and the status strip show how many will run (for example `4/21`). Your choice is remembered.
+3. **Scan** (▶ or Enter). Only the ticked checks run, on every selected repository. To run them on a single repository, select just that one, or use the re-run button on its result card. Repositories are scanned one at a time. Stop (■ or Esc) keeps everything already finished.
+4. **Read results.** Each repository gets a score out of 100 and is **Passing** (no critical or high severity failures) or **Failing**. Critical failures are pinned to the top. A check whose prerequisite failed is skipped ("Needs … to pass first") so the same problem isn't reported twice. Categories with failures open automatically. Click a check to see its evidence. Hover a category or check to re-run just that part.
+5. **Filter** (funnel icon) to show failures only.
+6. **Fix.** Click **Fix** on a repository card to fix that repository, or the wand in the top bar to fix every scanned repository. A wand next to a failed check means Preflight can fix it. You get a preview first; nothing is written until you confirm.
 
 The bottom strip shows queue progress and the GitHub API rate limit (hover for numbers). When GitHub throttles requests, Preflight waits and retries automatically.
 

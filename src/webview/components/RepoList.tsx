@@ -57,7 +57,7 @@ export function RepoList() {
   const selectedCount = selection.value.size;
 
   return (
-    <aside class="repos" aria-label="Repositories">
+    <div class="pane" role="tabpanel" id="pane-repos" aria-labelledby="tab-repos">
       <div class="repos-tools">
         <div class="search">
           <Icon name="search" />
@@ -123,7 +123,7 @@ export function RepoList() {
           </div>
         </div>
       )}
-    </aside>
+    </div>
   );
 }
 

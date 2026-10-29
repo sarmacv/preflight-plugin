@@ -1,4 +1,4 @@
-import { auth, canScan, cancelScan, excludedChecks, failuresOnly, popover, provider, providers, rateLimit, scanning, ssoBlockedOrgs, startScan } from '../store';
+import { auth, checkCounts, selection, canScan, cancelScan, failuresOnly, popover, provider, providers, rateLimit, scanning, ssoBlockedOrgs, startScan } from '../store';
 import { post } from '../vscode';
 import { Icon, IconButton } from './Icon';
 import { PROVIDER_META } from './providerMeta';
@@ -39,15 +39,17 @@ export function TopBar() {
       </button>
 
       <span class="sep" />
-      <IconButton icon="play" label="Scan (Enter)" primary={primaryAction.value === 'scan'} disabled={!canScan.value || fixPhase.value !== 'idle'} onClick={startScan} />
+      <IconButton
+        icon="play"
+        label={`Scan ${selection.value.size} repo${selection.value.size === 1 ? '' : 's'} · ${checkCounts.value.selected} of ${checkCounts.value.total} checks (Enter)`} primary={primaryAction.value === 'scan'} disabled={!canScan.value || fixPhase.value !== 'idle'} onClick={startScan} />
       <IconButton icon="debug-stop" label="Stop (Esc)" disabled={!scanning.value} onClick={cancelScan} />
       <IconButton icon="wand" label="Fix failed checks" primary={primaryAction.value === 'fix'} disabled={!canFix.value} onClick={() => prepareFixes()} />
       <span class="sep" />
       <IconButton icon="refresh" label="Refresh" disabled={a.status === 'checking' || scanning.value || fixPhase.value !== 'idle'} onClick={() => post({ type: 'refresh' })} />
       <IconButton
-        icon={failuresOnly.value || excludedChecks.value.size ? 'filter-filled' : 'filter'}
-        label={`Filter${failuresOnly.value ? ' · failures only' : ''}${excludedChecks.value.size ? ` · ${excludedChecks.value.size} check(s) off` : ''}`}
-        class={failuresOnly.value || excludedChecks.value.size ? 'active' : undefined}
+        icon={failuresOnly.value ? 'filter-filled' : 'filter'}
+        label={failuresOnly.value ? 'Showing failures only' : 'Filter results'}
+        class={failuresOnly.value ? 'active' : undefined}
         disabled={!signedIn}
         onClick={(e) => openPopover('filter', e)}
       />

@@ -22,6 +22,19 @@ export const catalogById = computed(() => new Map(catalog.value.map((c) => [c.id
 /** Checks excluded from scans by the user (empty = run everything). */
 export const excludedChecks = signal<Set<string>>(new Set(persisted.excluded ?? []));
 export const failuresOnly = signal(false);
+/** Which list the left pane shows. */
+export const leftTab = signal<'repos' | 'checks'>(persisted.leftTab ?? 'repos');
+
+export const checkCounts = computed(() => {
+  const total = catalog.value.length;
+  return { selected: total - catalog.value.filter((c) => excludedChecks.value.has(c.id)).length, total };
+});
+
+export function setChecksExcluded(ids: string[], exclude: boolean): void {
+  const next = new Set(excludedChecks.value);
+  for (const id of ids) (exclude ? next.add(id) : next.delete(id));
+  excludedChecks.value = next;
+}
 
 export type RunStatus = 'queued' | 'running' | 'done' | 'failed' | 'cancelled';
 
@@ -57,7 +70,7 @@ export type Popover =
   | { kind: 'filter'; anchor: DOMRect };
 export const popover = signal<Popover | undefined>(undefined);
 
-effect(() => saveState({ selection: [...selection.value], orgFilter: orgFilter.value, excluded: [...excludedChecks.value] }));
+effect(() => saveState({ selection: [...selection.value], orgFilter: orgFilter.value, excluded: [...excludedChecks.value], leftTab: leftTab.value }));
 
 export const owners = computed(() => [...new Set(repos.value.map((r) => r.owner))].sort((a, b) => a.localeCompare(b)));
 

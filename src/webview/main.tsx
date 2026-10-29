@@ -3,7 +3,7 @@ import { useEffect } from 'preact/hooks';
 import './styles.css';
 import { AuthGate } from './components/AuthGate';
 import { Popovers } from './components/Popovers';
-import { RepoList } from './components/RepoList';
+import { LeftPane } from './components/LeftPane';
 import { Results } from './components/Results';
 import { FixView } from './components/FixView';
 import { closeFixes, fixPhase, handleFixMessage } from './fixStore';
@@ -41,7 +41,7 @@ function App() {
       <TopBar />
       {signedIn ? (
         <div class="body">
-          <RepoList />
+          <LeftPane />
           <main class="results" aria-label="Results">
             {fixPhase.value === 'idle' ? <Results /> : <FixView />}
           </main>

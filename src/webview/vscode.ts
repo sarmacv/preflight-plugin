@@ -23,6 +23,7 @@ export interface PersistedState {
   selection: [string, string][];
   orgFilter: string;
   excluded: string[];
+  leftTab: 'repos' | 'checks';
 }
 
 export const loadState = (): Partial<PersistedState> => (api.getState() as Partial<PersistedState>) ?? {};

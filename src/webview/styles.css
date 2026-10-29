@@ -600,3 +600,61 @@ button, input, select { font: inherit; color: inherit; }
 .score .of { font-size: 11px; font-weight: 400; color: var(--pf-muted); margin-left: 1px; }
 .fix-tag { display: inline-flex; color: var(--vscode-textLink-foreground); }
 .fix-tag .codicon { font-size: 12px; }
+
+/* Left pane tabs and check picker */
+.repos > .pane { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.tabs { display: flex; gap: 2px; padding: 4px 6px 0; border-bottom: 1px solid var(--pf-border); flex: none; }
+.tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 10px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--pf-muted);
+  cursor: pointer;
+}
+.tab .codicon { font-size: 14px; }
+.tab:hover { color: var(--vscode-foreground); }
+.tab.on { color: var(--vscode-foreground); border-bottom-color: var(--vscode-panelTitle-activeBorder, var(--pf-focus)); }
+.tab-count {
+  min-width: 16px;
+  height: 16px;
+  padding: 0 5px;
+  border-radius: 8px;
+  font-size: 11px;
+  line-height: 16px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  background: var(--vscode-badge-background);
+  color: var(--vscode-badge-foreground);
+}
+.tab-count.partial { background: var(--vscode-textLink-foreground); color: var(--vscode-editor-background); }
+
+.check-scroll { flex: 1; overflow-y: auto; min-height: 0; padding-bottom: 6px; }
+.pick-row { display: flex; align-items: center; height: var(--pf-row); }
+.pick-row.cat { padding-left: 2px; }
+.pick-twisty { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 100%; border: 0; background: transparent; cursor: pointer; padding: 0; color: var(--pf-muted); }
+.pick-twisty .codicon { font-size: 12px; }
+.pick {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+  height: var(--pf-row);
+  padding: 0 8px 0 4px;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+.pick:hover, .pick-row.cat:hover { background: var(--pf-hover); }
+.pick-row.cat .pick { font-weight: 600; }
+.pick-row.sub { width: 100%; padding-left: 26px; }
+.pick .ellipsis { flex: 1; }
+.pick .check { width: 14px; height: 14px; }
+.strip-btn { border: 0; background: transparent; color: inherit; padding: 0; cursor: pointer; font-size: inherit; }
+.strip-btn:hover { color: var(--vscode-textLink-foreground); }

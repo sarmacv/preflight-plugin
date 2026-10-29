@@ -1,4 +1,4 @@
-import { auth, queueProgress, rateLimit, reposDone, scanning, selection } from '../store';
+import { auth, checkCounts, leftTab, queueProgress, rateLimit, reposDone, scanning, selection } from '../store';
 import { Icon } from './Icon';
 
 const RATE_ICON = { ok: 'pulse', low: 'warning', waiting: 'watch' } as const;
@@ -18,9 +18,18 @@ export function StatusStrip() {
           <Icon name="repo" />
           <span>{selection.value.size}</span>
         </span>
+        <button
+          type="button"
+          class="strip-item strip-btn"
+          title={`${checkCounts.value.selected} of ${checkCounts.value.total} checks selected`}
+          onClick={() => (leftTab.value = 'checks')}
+        >
+          <Icon name="checklist" />
+          <span>{checkCounts.value.selected}/{checkCounts.value.total}</span>
+        </button>
         {queueProgress.value.total > 0 && (
           <span class="strip-item" title={`${queueProgress.value.finished} of ${queueProgress.value.total} repos scanned`}>
-            {scanning.value ? <Icon name="loading" spin /> : <Icon name="checklist" />}
+            {scanning.value ? <Icon name="loading" spin /> : <Icon name="pass" />}
             <span>{queueProgress.value.finished} / {queueProgress.value.total}</span>
             {scanning.value && (
               <span class="progress determinate small" role="progressbar" aria-valuenow={queueProgress.value.finished} aria-valuemax={queueProgress.value.total} aria-label="Scan progress">

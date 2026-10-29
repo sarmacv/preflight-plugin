@@ -1,7 +1,7 @@
 import { useState } from 'preact/hooks';
 import type { CheckMeta, CheckResult, Severity } from '../../shared/protocol';
 import {
-  canScan, catalogById, failuresOnly, rerun, runs, scanError, scanning, startScan, type RepoRunView,
+  canScan, catalogById, checkCounts, failuresOnly, rerun, runs, scanError, scanning, startScan, type RepoRunView,
 } from '../store';
 import { post } from '../vscode';
 import { Empty, Icon, IconButton } from './Icon';
@@ -113,7 +113,7 @@ function RepoCard({ run }: { run: RepoRunView }) {
             <Icon name="wand" /> Fix {fixable}
           </button>
         )}
-        <IconButton icon="refresh" label="Re-run all checks" disabled={scanning.value} onClick={() => rerun(run.repo, run.branch, run.checkIds)} />
+        <IconButton icon="refresh" label={`Run the ${checkCounts.value.selected} selected checks on this repo`} disabled={scanning.value || checkCounts.value.selected === 0} onClick={() => rerun(run.repo, run.branch)} />
         <IconButton icon="link-external" label="Open on GitHub" onClick={() => post({ type: 'openExternal', url: repoUrl })} />
       </header>
 
