@@ -37,20 +37,42 @@ export class LmProvider implements ModelProvider {
   }
 
   async evaluate(skill: Skill, ctx: EvaluationContext, signal?: AbortSignal): Promise<Evaluation> {
-    return this.parse(await this.ask((m) => evaluationPrompt(skill, ctx, this.charBudget(m)), signal), parseEvaluation);
+    return this.askAndParse((m) => evaluationPrompt(skill, ctx, this.charBudget(m)), parseEvaluation, 'AI review', signal);
   }
 
   async generateFix(skill: Skill, ctx: EvaluationContext, signal?: AbortSignal): Promise<FixProposal> {
-    return this.parse(await this.ask((m) => fixPrompt(skill, ctx, this.charBudget(m)), signal), parseFix);
+    return this.askAndParse((m) => fixPrompt(skill, ctx, this.charBudget(m)), parseFix, 'AI fix', signal);
   }
 
-  private parse<T>(reply: string, parser: (text: string) => T): T {
-    try {
-      return parser(reply);
-    } catch (err) {
-      this.log(`${this.label}: unusable reply (${(err as Error).message}): ${reply.slice(0, 500)}`);
-      throw new AiError('The AI answer could not be used. Re-run the check.', (err as Error).message);
+  /** Asks, and if the reply can't be parsed asks once more saying what was wrong, before giving up. */
+  private async askAndParse<T>(prompt: (m: vscode.LanguageModelChat) => string, parser: (text: string) => T, what: string, signal?: AbortSignal): Promise<T> {
+    let problem = '';
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      let reply: string;
+      try {
+        reply = await this.ask(
+          (m) =>
+            attempt === 1
+              ? prompt(m)
+              : `${prompt(m)}\n\nYour previous answer could not be used (${problem}). Answer again, following the required format exactly.`,
+          signal,
+        );
+      } catch (err) {
+        // A failed request (network, rate limit) is retried once; "no usable model" and cancellation are not.
+        const noModel = err instanceof AiError && /isn't available/.test(err.message);
+        if (signal?.aborted || noModel || attempt === 2) throw err;
+        problem = (err as Error).message;
+        this.log(`${this.label}: request failed on attempt ${attempt} (${problem}); retrying`);
+        continue;
+      }
+      try {
+        return parser(reply);
+      } catch (err) {
+        problem = (err as Error).message;
+        this.log(`${this.label}: unusable reply on attempt ${attempt} (${problem}): ${reply.slice(0, 500)}`);
+      }
     }
+    throw new AiError(`The ${what} returned an unusable answer twice`, problem);
   }
 
   private async ask(prompt: (model: vscode.LanguageModelChat) => string, signal?: AbortSignal): Promise<string> {
@@ -64,7 +86,7 @@ export class LmProvider implements ModelProvider {
         if (signal?.aborted) throw err;
         if (!isModelUnavailable(code, message)) {
           this.log(`${this.label} request failed: ${message}`);
-          throw new AiError('AI review failed. Re-run the check.', message);
+          throw new AiError('The AI request failed', message);
         }
         // Checks run in parallel; only the first to hit a refusal moves on, so a good model isn't skipped.
         if (this.model === model) {

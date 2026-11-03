@@ -64,7 +64,7 @@ The **Sonar Code Coverage** category runs three checks, and one scan gives the f
 
 A repository is **Incomplete** (amber) instead of Passing when any check couldn't be evaluated, so a perfect score always means everything was actually checked.
 
-One **Fix** handles both: it adds `sonar-project.properties` and opens the draft Coverage PR. When coverage is below the threshold, the Coverage PR writes tests for just enough untested source files to reach it (largest first, each test named after its source file), and its notes show the estimate before and after, for example "61% → 83% (threshold 80%)".
+One **Fix** handles both: it adds `sonar-project.properties` and opens the draft Coverage PR. When coverage is below the threshold, the Coverage PR writes tests for just enough untested source files to reach it (largest first, each test named after its source file), and its notes show the estimate before and after, for example "61% → 83% (threshold 80%)". It works on three files at a time; if the AI can't produce a usable test for a file after a retry, Preflight carries on and uses the next untested file instead, and the notes list any file it skipped.
 
 1. Set **Preflight › Sonar: Url** (`preflight.sonar.url`) to your server, for example `https://sonar.example.com`.
 2. Run **Preflight: Set Sonar Token** from the Command Palette and paste a SonarQube user token. It is stored in VS Code's secret storage. **Preflight: Clear Sonar Token** removes it.

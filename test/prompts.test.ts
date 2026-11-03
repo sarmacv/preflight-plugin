@@ -45,3 +45,41 @@ describe('response parsing', () => {
     for (const bad of ['/abs', 'a/../b', '.git/config', 'a//b', 'a\\b', '']) expect(isSafeRepoPath(bad)).toBe(false);
   });
 });
+
+describe('file-block fix answers', () => {
+  it('reads raw file blocks with code that would break JSON', () => {
+    const reply = [
+      '<file path="test/a.test.ts">',
+      "import { a } from '../src/a';",
+      'test("quotes \\"and\\" backslashes \\\\ and {braces}", () => { expect(a()).toBe(`x`); });',
+      '</file>',
+      '<file path="./test/b.test.ts">',
+      '```ts',
+      'test("b", () => {});',
+      '```',
+      '</file>',
+      '<notes>',
+      '- Check the mocks',
+      '</notes>',
+    ].join('\n');
+    const fix = parseFix(reply);
+    expect(fix.changes.map((c) => c.path)).toEqual(['test/a.test.ts', 'test/b.test.ts']);
+    expect(fix.changes[0].content).toContain('quotes \\"and\\" backslashes \\\\ and {braces}');
+    expect(fix.changes[1].content).toBe('test("b", () => {});\n');
+    expect(fix.notes).toBe('- Check the mocks');
+  });
+
+  it('reports a reply that was cut off mid-file', () => {
+    expect(() => parseFix('<file path="test/a.test.ts">\ntest(')).toThrow(/cut off/);
+  });
+
+  it('still rejects unsafe paths in file blocks', () => {
+    expect(() => parseFix('<file path="../escape.ts">\nx\n</file>')).toThrow(/unsafe path/);
+  });
+
+  it('asks for file blocks, not JSON, in fix prompts', () => {
+    const p = fixPrompt(skill, { repo: fakeRepo({}), files: [] }, 1000);
+    expect(p).toContain('<file path="repo/relative/path">');
+    expect(p).not.toContain('{"files"');
+  });
+});

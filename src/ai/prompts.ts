@@ -72,8 +72,15 @@ export function fixPrompt(skill: Skill, ctx: EvaluationContext, charBudget: numb
     'Current contents of relevant files:',
     filesBlock(ctx, charBudget),
     '',
-    'Answer with JSON only, no prose and no code fence, in exactly this shape:',
-    '{"files": [{"path": "repo/relative/path", "content": "full new file content"}], "notes": "what the reviewer should verify, as short bullet points"}',
+    // Code inside JSON strings needs escaping that models often get wrong, so files come as raw blocks.
+    'Answer in exactly this format, with nothing before or after it. Put each file\'s complete content between its tags, unescaped and without code fences:',
+    '<file path="repo/relative/path">',
+    'full file content',
+    '</file>',
+    'Repeat the <file> block for each file you create or change, then finish with:',
+    '<notes>',
+    '- what the reviewer should verify',
+    '</notes>',
   ].join('\n');
 }
 
@@ -97,13 +104,35 @@ export function parseEvaluation(text: string): Evaluation {
   return { status: raw.status, evidence: evidence.length ? evidence : [{ message: raw.status === 'pass' ? 'AI review found no issues' : 'AI review failed this check' }] };
 }
 
-export function parseFix(text: string): FixProposal {
+const FILE_BLOCK = /<file\s+path="([^"]+)"\s*>\r?\n?([\s\S]*?)<\/file>/g;
+const FENCED = /^\s*```[\w-]*\r?\n([\s\S]*?)\r?\n?```\s*$/;
+
+/** Reads <file path="…">…</file> blocks (the requested format), or the older JSON shape as a fallback. */
+function readFiles(text: string): { files: { path: string; content: string }[]; notes?: string } {
+  const blocks = [...text.matchAll(FILE_BLOCK)];
+  if (blocks.length) {
+    const files = blocks.map((m) => {
+      let content = m[2];
+      const fenced = FENCED.exec(content);
+      if (fenced) content = fenced[1];
+      return { path: m[1].trim(), content: content.endsWith('\n') ? content : `${content}\n` };
+    });
+    const notes = /<notes>([\s\S]*?)<\/notes>/.exec(text)?.[1]?.trim();
+    return { files, notes };
+  }
+  if (/<file\s+path=/.test(text)) throw new Error('Model reply was cut off before a file block closed');
   const raw = extractJson(text) as { files?: { path?: string; content?: string }[]; notes?: string };
-  const changes = (raw.files ?? [])
-    .filter((f) => typeof f?.path === 'string' && typeof f.content === 'string')
-    .map((f) => ({ path: f.path!.replace(/^\.\//, ''), content: f.content! }));
+  return {
+    files: (raw.files ?? []).filter((f) => typeof f?.path === 'string' && typeof f.content === 'string').map((f) => ({ path: f.path!, content: f.content! })),
+    notes: typeof raw.notes === 'string' ? raw.notes : undefined,
+  };
+}
+
+export function parseFix(text: string): FixProposal {
+  const raw = readFiles(text);
+  const changes = raw.files.map((f) => ({ path: f.path.replace(/^\.\//, ''), content: f.content }));
   const unsafe = changes.find((c) => !isSafeRepoPath(c.path));
   if (unsafe) throw new Error(`Model proposed an unsafe path: ${unsafe.path}`);
   if (changes.length === 0) throw new Error('Model proposed no file changes');
-  return { changes, notes: typeof raw.notes === 'string' ? raw.notes.trim() : undefined };
+  return { changes, notes: raw.notes?.trim() || undefined };
 }

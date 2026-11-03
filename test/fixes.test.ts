@@ -226,3 +226,38 @@ describe('coverage PR reaches the threshold', () => {
     ]);
   });
 });
+
+describe('coverage PR keeps going when a file fails', () => {
+  const repo = (n: number) => fakeRepo(Object.fromEntries(Array.from({ length: n }, (_, i) => [`src/m${i}.ts`, 'x'.repeat(100 + i)])));
+  const flaky = (bad: string[]): ModelProvider => ({
+    ...provider,
+    generateFix: async (_skill, ctx) => {
+      const src = ctx.files[0].path;
+      if (bad.includes(src)) throw new Error('The AI fix returned an unusable answer twice');
+      return { changes: [{ path: src.replace(/\.ts$/, '.test.ts'), content: 'test()' }] };
+    },
+  });
+
+  it('replaces a failed file with the next untested one and still reaches the threshold', async () => {
+    // 5 files, 0 tested: 4 needed for 80%. The largest (m4) fails; m0 is used instead.
+    const plan = await planRepoFixes({ ctx: repo(5), skills: [coverageSkill], results: [fail(coverageSkill)], provider: flaky(['src/m4.ts']), branchTemplate: '{type}', coverageMaxFiles: 0, coverageThreshold: 80, user: 'me' });
+    const pr = plan.prs[0];
+    expect(pr.files.map((f) => f.path).sort()).toEqual(['src/m0.test.ts', 'src/m1.test.ts', 'src/m2.test.ts', 'src/m3.test.ts']);
+    expect(pr.notes[1]).toBe('- Estimated coverage: 0% → 80% (threshold 80%).');
+    expect(pr.notes.join('\n')).toMatch(/Couldn't write tests for: src\/m4\.ts \(The AI fix returned an unusable answer twice\) \(other untested files were used instead\)/);
+    expect(plan.problems).toEqual([]);
+  });
+
+  it('opens the PR with what it could write when it runs out of files', async () => {
+    const plan = await planRepoFixes({ ctx: repo(5), skills: [coverageSkill], results: [fail(coverageSkill)], provider: flaky(['src/m4.ts', 'src/m3.ts']), branchTemplate: '{type}', coverageMaxFiles: 0, coverageThreshold: 80, user: 'me' });
+    expect(plan.prs[0].files).toHaveLength(3);
+    expect(plan.prs[0].notes[1]).toMatch(/0% → 60% \(threshold 80%\)\. Still below the threshold/);
+  });
+
+  it('reports a problem without asking the user to re-run when nothing could be written', async () => {
+    const plan = await planRepoFixes({ ctx: repo(2), skills: [coverageSkill], results: [fail(coverageSkill)], provider: flaky(['src/m0.ts', 'src/m1.ts']), branchTemplate: '{type}', coverageMaxFiles: 0, coverageThreshold: 80, user: 'me' });
+    expect(plan.prs).toEqual([]);
+    expect(plan.problems[0].reason).toMatch(/^Couldn't generate tests: src\/m1\.ts/);
+    expect(plan.problems[0].reason).not.toMatch(/re-run/i);
+  });
+});
