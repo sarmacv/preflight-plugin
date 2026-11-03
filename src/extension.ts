@@ -7,7 +7,13 @@ export function activate(context: vscode.ExtensionContext): void {
   const output = vscode.window.createOutputChannel('Preflight');
   const open = () => PreflightPanel.show(context, output);
 
-  // The activity-bar view is only a launcher: showing it opens the editor-tab panel.
+  // VS Code requires an activity-bar icon to open a sidebar view. Preflight lives in an editor tab, so the
+  // view is only a launcher: when it is shown, open the tab and close the sidebar again, so clicking the
+  // icon goes straight to Preflight.
+  const launch = () => {
+    open();
+    void vscode.commands.executeCommand('workbench.action.closeSidebar');
+  };
   const launcher = vscode.window.createTreeView('preflight.launcher', {
     treeDataProvider: { getTreeItem: (e: vscode.TreeItem) => e, getChildren: () => [] },
   });
@@ -15,7 +21,7 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
     output,
     launcher,
-    launcher.onDidChangeVisibility((e) => e.visible && open()),
+    launcher.onDidChangeVisibility((e) => e.visible && launch()),
     vscode.commands.registerCommand('preflight.open', open),
     vscode.commands.registerCommand('preflight.probeModels', () => probeModels(output)),
     vscode.commands.registerCommand('preflight.setSonarToken', async () => {
@@ -33,7 +39,7 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
   );
 
-  if (launcher.visible) open();
+  if (launcher.visible) launch();
 }
 
 export function deactivate(): void {}

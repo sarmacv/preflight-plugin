@@ -57,7 +57,7 @@ export class PreflightPanel implements vscode.Disposable {
       localResourceRoots: [vscode.Uri.joinPath(context.extensionUri, 'dist'), vscode.Uri.joinPath(context.extensionUri, 'media')],
     });
     this.panel.iconPath = vscode.Uri.joinPath(context.extensionUri, 'media', 'icon.png');
-    this.panel.webview.html = renderHtml(this.panel.webview, context.extensionUri);
+    this.panel.webview.html = renderHtml(this.panel.webview, context.extensionUri, String(context.extension.packageJSON.version ?? ''));
     this.provider = vscode.workspace.getConfiguration('preflight').get<ProviderId>('model.default', 'copilot');
 
     this.catalog = loadSkills(vscode.Uri.joinPath(context.extensionUri, 'skills').fsPath).then((r) => {

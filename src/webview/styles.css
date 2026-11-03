@@ -688,3 +688,4 @@ button, input, select { font: inherit; color: inherit; }
 .steps .task-label { max-width: 60%; }
 .framework { display: flex; align-items: center; gap: 5px; padding: 4px 0 0; font-size: 12px; }
 .framework .codicon { font-size: 12px; }
+.version { margin-left: 10px; font-variant-numeric: tabular-nums; }

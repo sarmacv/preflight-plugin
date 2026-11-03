@@ -7,7 +7,7 @@ export function nonce(): string {
   return out;
 }
 
-export function renderHtml(webview: vscode.Webview, extensionUri: vscode.Uri): string {
+export function renderHtml(webview: vscode.Webview, extensionUri: vscode.Uri, version: string): string {
   const asset = (...p: string[]) => webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, ...p));
   const n = nonce();
   const csp = [
@@ -29,7 +29,7 @@ export function renderHtml(webview: vscode.Webview, extensionUri: vscode.Uri): s
 <title>Preflight</title>
 </head>
 <body>
-<div id="app" data-logo="${asset('media', 'logo.svg')}"></div>
+<div id="app" data-logo="${asset('media', 'logo.svg')}" data-version="${version.replace(/[^0-9A-Za-z.+-]/g, '')}"></div>
 <script nonce="${n}" src="${asset('dist', 'webview', 'main.js')}"></script>
 </body>
 </html>`;

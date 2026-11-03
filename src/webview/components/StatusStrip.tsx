@@ -1,6 +1,9 @@
 import { auth, checkCounts, leftTab, queueProgress, rateLimit, reposDone, scanning, selection } from '../store';
 import { Icon } from './Icon';
 
+/** The installed extension's version, set by the host on the page. */
+const VERSION = document.getElementById('app')?.dataset.version ?? '';
+
 const RATE_ICON = { ok: 'pulse', low: 'warning', waiting: 'watch' } as const;
 
 export function StatusStrip() {
@@ -46,6 +49,11 @@ export function StatusStrip() {
         <Icon name={RATE_ICON[rl?.state ?? 'ok']} />
         {rl && rl.state !== 'ok' && <span>{rl.remaining.toLocaleString()}</span>}
       </span>
+      {VERSION && (
+        <span class="version muted" title={`Preflight ${VERSION}`}>
+          v{VERSION}
+        </span>
+      )}
     </footer>
   );
 }
