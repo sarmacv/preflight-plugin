@@ -49,7 +49,7 @@ export class FixFlow {
         [...run.results.values()].some((r) => r.status === 'fail' && r.fixable && skills.find((s) => s.id === r.checkId)?.fix?.kind === 'ai'),
       );
       const provider = needsModel ? await createProvider(providerId, this.deps.log) : undefined;
-      const sonar = runs.some(([, run]) => run.results.get('test-coverage')?.status === 'fail') ? await this.deps.sonar() : undefined;
+      const sonar = runs.some(([, run]) => run.results.get('sonar-code-coverage')?.status === 'fail') ? await this.deps.sonar() : undefined;
 
       const repos: RepoPlan[] = [];
       for (const [repo, run] of runs) {

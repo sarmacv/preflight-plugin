@@ -90,14 +90,14 @@ const fail = (s: Skill): CheckResult => ({ checkId: s.id, name: s.name, category
 const templateSkill = mk("id: sonar\nname: Sonar\ncategory: code-quality\nseverity: high\nevaluation: deterministic\nfixable: true\nrules:\n  - file_exists: x\nfix:\n  kind: template\n  path: sonar-project.properties\n  template: \"sonar.projectKey={repo}\\n\"");
 const aiSkill = mk('id: agents\nname: Agents\ncategory: ai-readiness\nseverity: medium\nevaluation: deterministic\nfixable: true\nrules:\n  - file_exists: AGENTS.md\nfix:\n  kind: ai\n  path: AGENTS.md\ncontext_files: [README.md]');
 const aiSkill2 = mk('id: agents-quality\nname: Agents quality\ncategory: ai-readiness\nseverity: medium\nevaluation: hybrid\nfixable: true\nrules:\n  - file_exists: AGENTS.md\nfix:\n  kind: ai\n  path: AGENTS.md');
-const coverageSkill = mk('id: test-coverage\nname: Coverage\ncategory: code-quality\nseverity: high\nevaluation: deterministic\nfixable: true\nfix_pr: coverage\nrules:\n  - builtin: { name: sonar_coverage }\nfix:\n  kind: ai');
+const coverageSkill = mk('id: sonar-code-coverage\nname: Coverage\ncategory: code-quality\nseverity: high\nevaluation: deterministic\nfixable: true\nfix_pr: coverage\nrules:\n  - builtin: { name: sonar_coverage }\nfix:\n  kind: ai');
 
 const provider: ModelProvider = {
   id: 'fake',
   label: 'Fake',
   evaluate: async () => ({ status: 'pass', evidence: [] }),
   generateFix: async (skill, ctx) => {
-    if (skill.id === 'test-coverage') {
+    if (skill.id === 'sonar-code-coverage') {
       const src = ctx.files[0].path;
       return { changes: [{ path: src.replace('src/', 'test/').replace('.ts', '.test.ts'), content: `test(${JSON.stringify(src)})` }, { path: src, content: 'hacked' }], notes: '- Tests mock the network' };
     }

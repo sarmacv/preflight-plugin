@@ -187,7 +187,7 @@ export class PreflightPanel implements vscode.Disposable {
       this.post({ type: 'scanStarted', targets, checkIds: skills.map((s) => s.id), rerun });
       this.output.appendLine(`Scan: ${targets.length} repo(s), ${skills.length} check(s), model ${provider?.label ?? 'none'}`);
 
-      const sonar = skills.some((s) => s.id === 'test-coverage') ? await this.sonarAccess(settings.sonarUrl) : undefined;
+      const sonar = skills.some((s) => s.id === 'sonar-code-coverage') ? await this.sonarAccess(settings.sonarUrl) : undefined;
       const result = await runScan(
         {
           targets,

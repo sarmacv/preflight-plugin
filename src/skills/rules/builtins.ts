@@ -6,6 +6,7 @@ import { inventory, LOCKFILES, manifestFiles, type Dependency, type Ecosystem } 
 import { errored, fail, pass, RuleConfigError, skipped, type RuleFn } from './types';
 import { inRange } from './versions';
 import { CI_ACTION_GLOBS } from './ciGlobs';
+import { describeCounts, profileOf } from './technology';
 
 function params<T>(schema: z.ZodType<T>, raw: unknown, name: string): T {
   const r = schema.safeParse(raw ?? {});
@@ -284,7 +285,28 @@ const sonarCoverage: RuleFn = async (_raw, ctx) => {
   return found.coverage >= threshold ? pass({ message, ...ev }) : fail({ message, ...ev });
 };
 
+/**
+ * Passes when the repo has enough application code for coverage to matter; otherwise reports
+ * "not required" as skipped, which also skips the Sonar checks that depend on it.
+ */
+const sonarRequired: RuleFn = async (raw, ctx) => {
+  const p = params(z.object({ min_source_files: z.number().int().positive().default(5) }), raw, 'sonar_required');
+  const profile = profileOf(ctx);
+  const languages = describeCounts(profile.source);
+  const configured = ctx.exists('sonar-project.properties');
+  if (configured) {
+    return pass({ message: `Required: ${configured} is present${languages ? ` (${languages} files)` : ''}`, path: configured, url: ctx.htmlUrl(configured) });
+  }
+  if (profile.sourceFiles >= p.min_source_files) {
+    return pass({ message: `Required: application code found (${languages} files)` });
+  }
+  const rest = describeCounts(profile.other);
+  const what = profile.sourceFiles === 0 ? 'no application code' : `only ${profile.sourceFiles} source file${profile.sourceFiles === 1 ? '' : 's'} (${languages})`;
+  return skipped(`Not required: ${what}${rest ? `; repo is ${rest} files` : ''}`);
+};
+
 export const BUILTINS: Record<string, RuleFn> = {
+  sonar_required: sonarRequired,
   stale_branches: staleBranches,
   branch_protected: branchProtected,
   branch_rules: branchRules,

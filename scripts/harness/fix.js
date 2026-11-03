@@ -27,8 +27,8 @@ window.harnessFix = (send, m) => {
           },
           {
             id: 'acme/api-gateway#coverage', kind: 'coverage', branch: 'preflight/coverage/20261028-d4e5f6', base: 'main', draft: true,
-            checks: [{ id: 'test-coverage', name: 'Test coverage meets threshold', category: 'code-quality', severity: 'high' }],
-            files: [{ path: 'test/router.test.ts', after: "import { route } from '../src/router';\n\ndescribe('route', () => {\n  it('matches exact paths', () => {\n    expect(route('/a')).toBe('a');\n  });\n});\n", editable: false, checkIds: ['test-coverage'] }],
+            checks: [{ id: 'sonar-code-coverage', name: 'Sonar code coverage', category: 'code-quality', severity: 'high' }],
+            files: [{ path: 'test/router.test.ts', after: "import { route } from '../src/router';\n\ndescribe('route', () => {\n  it('matches exact paths', () => {\n    expect(route('/a')).toBe('a');\n  });\n});\n", editable: false, checkIds: ['sonar-code-coverage'] }],
             notes: ['- Targets from Sonar project `api-gateway`: src/router.ts (12% covered).'],
           },
         ],

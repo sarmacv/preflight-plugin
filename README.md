@@ -54,7 +54,13 @@ All three go through GitHub Copilot in VS Code, so no extra keys are needed. Onl
 
 ### SonarQube (optional)
 
-Needed for the **Test coverage** check and the coverage PR.
+Needed for the **Sonar code coverage** check and the coverage PR.
+
+Code Quality runs three checks in order:
+
+1. **Sonar coverage required** decides from the repository's technology whether coverage applies. Repositories with application code (TypeScript/JavaScript, Python, Java/Kotlin, Go, C#, Ruby, PHP, Swift, C/C++, Rust, Dart and others) need it. Docs-only, configuration, Terraform/IaC, Helm, Docker and script repositories don't, and the next two checks are skipped with the same reason. A repository with `sonar-project.properties` always needs it.
+2. **Sonar onboarded** checks the repository is set up for SonarQube.
+3. **Sonar code coverage** checks SonarQube's coverage for the scanned branch meets `preflight.coverage.threshold`.
 
 1. Set **Preflight › Sonar: Url** (`preflight.sonar.url`) to your server, for example `https://sonar.example.com`.
 2. Run **Preflight: Set Sonar Token** from the Command Palette and paste a SonarQube user token. It is stored in VS Code's secret storage. **Preflight: Clear Sonar Token** removes it.
@@ -138,7 +144,7 @@ fixable: true
 fix_pr: fixes                    # fixes | coverage
 applies_to:                      # optional: skip unless a matching file exists
   any_file: ['**/*.py']
-depends_on: [readme-contributing] # optional: skip if any of these checks fails
+depends_on: [readme-contributing] # optional: skip if any of these checks fails or is skipped
 rules:                           # required for deterministic and hybrid
   - any_file_exists: [SECURITY.md, .github/SECURITY.md]
 fix:                             # required when fixable
@@ -177,7 +183,7 @@ All five body sections are required. The whole file is the prompt for AI evaluat
 | `all_of: [rules]`, `any_of: [rules]`, `not: rule` | Combinators |
 | `builtin: {name, params}` | A named evaluator passes (see below) |
 
-**Built-in evaluators:** `stale_branches {days?, max_stale}`, `branch_protected {branch: default \| scanned}`, `branch_rules {min_reviews, require_status_checks}`, `vulnerable_dependencies {fail_on: [CRITICAL, HIGH, MODERATE, LOW]}`, `dependency_pinning {actions_sha, docker_digest}`, `license_compliance`, `sonar_coverage`.
+**Built-in evaluators:** `sonar_required {min_source_files}`, `stale_branches {days?, max_stale}`, `branch_protected {branch: default \| scanned}`, `branch_rules {min_reviews, require_status_checks}`, `vulnerable_dependencies {fail_on: [CRITICAL, HIGH, MODERATE, LOW]}`, `dependency_pinning {actions_sha, docker_digest}`, `license_compliance`, `sonar_coverage`.
 
 **Fix kinds**
 
@@ -213,7 +219,7 @@ The gear icon in the top bar opens these settings.
 - **"AI review isn't available right now."** None of the models in the chosen family accepted the request. The **Preflight** output channel shows which were tried. **Preflight: Probe Models** tests each one.
 - **"Required reviews and status checks" shows an error.** Reading classic branch protection needs admin access, and rulesets aren't available on some private-repository plans.
 - **Vulnerable dependencies or licence compliance is skipped.** No lockfile with exact versions was found, or the dependency graph isn't enabled. Licence data comes only from the dependency graph, which covers the default branch only.
-- **Test coverage is skipped.** `preflight.sonar.url` isn't set, or no token was provided.
+- **Sonar code coverage is skipped.** The repository doesn't need coverage (see "Sonar coverage required"), `preflight.sonar.url` isn't set, or no token was provided.
 - **Commit failed: "Repository rule violations".** A ruleset blocks the branch name or the commit. Adjust `preflight.branch.template` and `preflight.branch.pattern` to match it.
 - **Logs.** View › Output › **Preflight**. Secrets are never logged.
 

@@ -39,8 +39,14 @@ export async function runCheck(skill: Skill, ctx: RepoContext, opts: RunOptions 
   });
 
   if (ctx.signal?.aborted) throw new ScanCancelled();
-  const blocker = opts.prerequisites?.find((p) => p.status === 'fail');
-  if (blocker) return result({ status: 'skipped', evidence: [{ message: `Needs "${blocker.name}" to pass first` }] });
+  // A failed prerequisite would only repeat the same problem; a skipped one means this check doesn't
+  // apply either (e.g. Sonar isn't required for a docs-only repo), so it carries the same reason.
+  const failed = opts.prerequisites?.find((p) => p.status === 'fail');
+  if (failed) return result({ status: 'skipped', evidence: [{ message: `Needs "${failed.name}" to pass first` }] });
+  const notApplicable = opts.prerequisites?.find((p) => p.status === 'skipped');
+  if (notApplicable) {
+    return result({ status: 'skipped', evidence: [{ message: notApplicable.evidence[0]?.message ?? `"${notApplicable.name}" was skipped` }] });
+  }
   try {
     const applies = skill.applies_to?.any_file;
     if (applies && ctx.match(applies).length === 0) {

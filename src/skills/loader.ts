@@ -2,6 +2,7 @@ import { readdir, readFile } from 'node:fs/promises';
 import { join, relative, sep } from 'node:path';
 import { parseSkill } from './parser';
 import type { Skill } from './types';
+import { dependencyOrder } from '../engine/queue';
 
 export interface LoadResult {
   skills: Skill[];
@@ -42,5 +43,6 @@ export async function loadSkills(root: string): Promise<LoadResult> {
       errors.push((err as Error).message);
     }
   }
-  return { skills, errors };
+  // Prerequisites are listed before the checks that depend on them, so results read in order.
+  return { skills: dependencyOrder(skills), errors };
 }

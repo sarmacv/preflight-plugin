@@ -77,7 +77,7 @@ describe('buildPrText', () => {
   });
 
   it('says coverage tests were not run', () => {
-    const t = buildPrText('coverage', [{ id: 'test-coverage', name: 'Coverage', severity: 'high' }], ['a.test.ts', 'b.test.ts'], [], 'main');
+    const t = buildPrText('coverage', [{ id: 'sonar-code-coverage', name: 'Coverage', severity: 'high' }], ['a.test.ts', 'b.test.ts'], [], 'main');
     expect(t.title).toBe('Preflight: add tests for 2 low-coverage files');
     expect(t.body).toMatch(/these tests have not been run/);
   });

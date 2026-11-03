@@ -90,14 +90,14 @@ describe('deterministic catalogue', () => {
     const results = await Promise.all(deterministic.map((s) => runCheck(s, ctx)));
     const notPassing = results.filter((r) => r.status !== 'pass').map((r) => `${r.checkId}: ${r.status} ${r.evidence.map((e) => e.message).join('; ')}`);
     // Coverage needs SonarQube, which the unit tests don't configure.
-    expect(notPassing).toEqual(['test-coverage: skipped SonarQube is not configured']);
+    expect(notPassing).toEqual(['sonar-code-coverage: skipped SonarQube is not configured']);
   });
 
   it('every deterministic check fails or skips on an empty repo', async () => {
     const ctx = fakeRepo({ 'src/main.py': 'print(1)\n' }, { gh: emptyGitHub, info: { branchProtected: false } });
     const results = Object.fromEntries((await Promise.all(deterministic.map((s) => runCheck(s, ctx)))).map((r) => [r.checkId, r.status]));
     // Nothing to inspect in a repo with no manifests, CI or containers.
-    const skippedByDesign = ['container-iac-lint', 'test-coverage', 'vulnerable-dependencies', 'license-compliance', 'dependency-pinning'];
+    const skippedByDesign = ['container-iac-lint', 'sonar-code-coverage', 'vulnerable-dependencies', 'license-compliance', 'dependency-pinning', 'sonar-required'];
     for (const [id, status] of Object.entries(results)) {
       expect(status, id).toBe(skippedByDesign.includes(id) ? 'skipped' : 'fail');
     }

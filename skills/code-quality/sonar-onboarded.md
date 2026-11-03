@@ -27,6 +27,7 @@ fix:
     sonar.exclusions=**/node_modules/**,**/dist/**,**/build/**,**/vendor/**
     sonar.tests=.
     sonar.test.inclusions=**/*test*/**,**/*.test.*,**/*.spec.*,**/*_test.*
+depends_on: [sonar-required]
 ---
 
 ## What this checks

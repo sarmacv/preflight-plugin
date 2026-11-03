@@ -1,6 +1,6 @@
 ---
-id: test-coverage
-name: Test coverage meets threshold
+id: sonar-code-coverage
+name: Sonar code coverage
 category: code-quality
 severity: high
 evaluation: deterministic
