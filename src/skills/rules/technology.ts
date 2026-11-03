@@ -31,11 +31,22 @@ const OTHER_KINDS: [RegExp, string][] = [
 const IGNORED_DIR = /(^|\/)(node_modules|vendor|third_party|dist|build|out|target|bin|obj|\.next|\.nuxt|coverage|generated|__generated__|docs?\/_build)\//i;
 
 /** Tests, and tool configuration written in a programming language. */
-const NOT_SOURCE = /(^|\/)(tests?|__tests__|spec|e2e)\/|\.(test|spec)\.[^/]+$|_test\.[^/]+$|Tests?\.(java|kt|cs)$|(^|\/)[^/]+\.config\.[cm]?[jt]s$|(^|\/)\.[^/]+rc\.[cm]?js$|(^|\/)(conftest|setup|noxfile|fabfile)\.py$|\.d\.ts$|\.min\.js$/i;
+/** Folders that hold tests (case-insensitive). */
+const TEST_DIRS = /(^|\/)(tests?|__tests__|specs?|e2e)\//i;
+/** Test file names by convention. Case matters for the CamelCase forms, so Latest.java is not a test. */
+const TEST_NAMES = /\.(test|spec)\.[^/]+$|_(test|spec)\.[^/]+$|(^|\/)test_[^/]+\.py$|[a-z0-9_](Test|Tests|Spec|IT)\.(java|kt|kts|scala|groovy|cs|vb|fs|swift|php|m|mm)$/;
+
+/** Whether a path is a test file, in any of the supported languages' conventions. */
+export function isTestPath(path: string): boolean {
+  return TEST_DIRS.test(path) || TEST_NAMES.test(path);
+}
+
+/** Tool configuration written in a programming language, and generated or minified code. */
+const NOT_SOURCE = /(^|\/)[^/]+\.config\.[cm]?[jt]s$|(^|\/)\.[^/]+rc\.[cm]?js$|(^|\/)(conftest|setup|noxfile|fabfile)\.py$|\.d\.ts$|\.min\.js$/i;
 
 /** The coverage language of an application source file, or undefined for tests, config, vendored code and non-code. */
 export function sourceLanguage(path: string): string | undefined {
-  if (IGNORED_DIR.test(path) || NOT_SOURCE.test(path)) return undefined;
+  if (IGNORED_DIR.test(path) || NOT_SOURCE.test(path) || isTestPath(path)) return undefined;
   const ext = /\.([^./]+)$/.exec(path)?.[1]?.toLowerCase();
   return ext ? COVERAGE_LANGUAGES[ext] : undefined;
 }
@@ -56,7 +67,7 @@ export function technologyProfile(paths: readonly string[]): TechnologyProfile {
     if (IGNORED_DIR.test(path)) continue;
     const ext = /\.([^./]+)$/.exec(path)?.[1]?.toLowerCase();
     const language = ext ? COVERAGE_LANGUAGES[ext] : undefined;
-    if (language && !NOT_SOURCE.test(path)) {
+    if (language && !NOT_SOURCE.test(path) && !isTestPath(path)) {
       source[language] = (source[language] ?? 0) + 1;
       sourceFiles++;
       continue;

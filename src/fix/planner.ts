@@ -8,6 +8,7 @@ import { isTestPath } from '../sonar/client';
 import { estimateTestCoverage, filesNeeded, testsRecognised } from '../skills/rules/technology';
 import { checkOrCategory, renderBranchName, type PrKind } from './branchName';
 import { BUILTIN_FIXES } from './builtinFixes';
+import { describeFramework, detectTestFramework, nearestFile, type TestFramework } from './testFramework';
 
 export interface PlanFile {
   path: string;
@@ -77,6 +78,8 @@ export interface CoverageProgress {
   /** For estimates: all application source files, and how many already had tests. */
   total?: number;
   tested?: number;
+  /** Test frameworks the new tests will use, e.g. "Vitest (packages/api/package.json)". */
+  frameworks?: string[];
 }
 
 export type FixEvent =
@@ -100,7 +103,8 @@ export interface PlanOptions {
   onEvent?: (event: FixEvent) => void;
 }
 
-const BUILD_FILES = ['package.json', 'pom.xml', 'build.gradle', 'build.gradle.kts', 'pyproject.toml', 'setup.cfg', 'go.mod', 'Cargo.toml', 'jest.config.js', 'jest.config.ts', 'vitest.config.ts', 'pytest.ini', 'tsconfig.json'];
+/** Test runner configuration worth showing the AI alongside the build file, nearest to the source. */
+const TEST_CONFIGS = ['vitest.config.ts', 'vitest.config.mts', 'vitest.config.js', 'jest.config.ts', 'jest.config.js', 'pytest.ini', 'conftest.py', 'tsconfig.json'];
 
 function renderTemplate(template: string, ctx: RepoContext, sonarUrl?: string): string {
   const vars: Record<string, string> = {
@@ -286,6 +290,15 @@ interface CoverageTarget {
   reason: string;
 }
 
+async function frameworksFor(ctx: RepoContext, targets: CoverageTarget[]): Promise<string[]> {
+  const names = new Set<string>();
+  for (const t of targets) {
+    const fw = await detectTestFramework(ctx, t.path);
+    if (fw) names.add(describeFramework(fw));
+  }
+  return [...names];
+}
+
 interface CoverageGoal {
   /** How many files need tests written successfully. */
   goal: number;
@@ -319,7 +332,7 @@ async function coverageTargets(opts: PlanOptions): Promise<CoverageGoal> {
           candidates: targets,
           origin: `the lowest-coverage files in Sonar project \`${lowest.projectKey}\``,
           dropped,
-          progress: { source: 'sonar', before: Math.round(measured?.coverage ?? 0), target: opts.coverageThreshold ?? 80, goal: targets.length },
+          progress: { source: 'sonar', before: Math.round(measured?.coverage ?? 0), target: opts.coverageThreshold ?? 80, goal: targets.length, frameworks: await frameworksFor(ctx, targets) },
         };
       }
     }
@@ -339,7 +352,15 @@ async function coverageTargets(opts: PlanOptions): Promise<CoverageGoal> {
     candidates,
     origin: `the largest source files without tests (${needed} needed to reach ${threshold}%)`,
     dropped,
-    progress: { source: 'estimate', before: est.percent, target: threshold, goal, total: est.tested.length + est.untested.length, tested: est.tested.length },
+    progress: {
+      source: 'estimate',
+      before: est.percent,
+      target: threshold,
+      goal,
+      total: est.tested.length + est.untested.length,
+      tested: est.tested.length,
+      frameworks: await frameworksFor(ctx, candidates.slice(0, goal)),
+    },
   };
 }
 
@@ -358,6 +379,8 @@ export function expectedTestName(source: string): string {
     case 'py': return `test_${stem}.py`;
     case 'go': return `${stem}_test.go`;
     case 'java': case 'kt': case 'scala': case 'groovy': return `${stem}Test.${ext}`;
+    case 'swift': case 'm': case 'mm': return `${stem}Tests.${ext}`;
+    case 'c': case 'cc': case 'cpp': case 'cxx': case 'h': case 'hpp': return `${stem}_test.${ext === 'h' ? 'c' : ext === 'hpp' ? 'cpp' : ext}`;
     case 'cs': return `${stem}Tests.cs`;
     case 'rb': return `${stem}_spec.rb`;
     case 'php': return `${stem}Test.php`;
@@ -365,6 +388,12 @@ export function expectedTestName(source: string): string {
     case 'dart': return `${stem}_test.dart`;
     default: return `${stem}.test.${ext}`;
   }
+}
+
+function frameworkInstruction(fw: TestFramework | undefined): string {
+  if (!fw) return 'Use the conventional test framework for this language.';
+  const where = fw.detectedFrom ? `, as declared in ${fw.detectedFrom}` : '';
+  return `This code's tests use ${fw.name}${where}. ${fw.hint}`;
 }
 
 /** Files the AI is asked about at the same time. */
@@ -375,18 +404,23 @@ async function planCoverage(skill: Skill, pr: PlanPr, plan: CoverageGoal, opts: 
   const provider = opts.provider;
   if (!provider) throw new Error("AI isn't available for this fix right now");
   const { goal, candidates, origin, dropped } = plan;
-  const buildFiles = BUILD_FILES.map((p) => ctx.exists(p)).filter((p): p is string => !!p).slice(0, 3);
+  const frameworksUsed = new Set<string>();
 
   /** Returns the test files added for this source (empty when none). */
   const writeTestsFor = async ({ path: source, reason }: CoverageTarget): Promise<string[]> => {
+    const framework = await detectTestFramework(ctx, source);
+    if (framework) frameworksUsed.add(describeFramework(framework));
+    // The build file and runner config nearest to the source, so monorepo packages get their own setup.
+    const config = nearestFile(ctx, source, TEST_CONFIGS);
     const files: { path: string; content: string }[] = [];
-    for (const p of [source, ...nearbyTests(ctx, source), ...buildFiles]) {
+    for (const p of new Set([source, ...nearbyTests(ctx, source), framework?.detectedFrom, config].filter((x): x is string => !!x))) {
       const content = await ctx.read(p);
       if (content !== undefined) files.push({ path: p, content });
     }
     const instructions = [
       `Write unit tests for ${source}. ${reason}.`,
-      'Use the same test framework, assertion style and location as the existing tests shown. If there are none, use the conventional framework for this stack declared in the build file.',
+      frameworkInstruction(framework),
+      'Follow the assertion style and structure of the existing tests shown, if any.',
       `Name the test file after the source file so it is clear which file it tests: put it at ${expectedTestPath(source)}, or if this repository keeps tests in a separate folder, mirror the source folders there with the same file name (e.g. tests/${expectedTestPath(source).split('/').slice(-2).join('/')}).`,
       'Cover the public behaviour and the branches that are currently untested. Mock external I/O.',
       'Only create or modify test files. Do not change production code or build files.',
@@ -445,6 +479,7 @@ async function planCoverage(skill: Skill, pr: PlanPr, plan: CoverageGoal, opts: 
   const allPaths = ctx.files.map((f) => f.path);
   const before = estimateTestCoverage(allPaths, isTestPath);
   const after = estimateTestCoverage([...allPaths, ...pr.files.map((f) => f.path)], isTestPath);
+  if (frameworksUsed.size) pr.notes.push(`- Tests use ${[...frameworksUsed].join(', ')}; confirm this matches how the repository runs its tests.`);
   pr.notes.unshift(
     `- Targets ${origin}: ${targets.join(', ') || 'none recognised yet'}.`,
     `- Estimated coverage: ${before.percent}% → ${after.percent}% (threshold ${threshold}%)${after.percent >= threshold ? '' : '. Still below the threshold; see below'}.`,

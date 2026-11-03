@@ -300,3 +300,26 @@ describe('progress events', () => {
     ]);
   });
 });
+
+describe('coverage PR uses the detected framework', () => {
+  it('tells the AI which framework to use and sends the nearest build file', async () => {
+    let seen: { instructions?: string; files: string[] } = { files: [] };
+    const spy: ModelProvider = {
+      ...provider,
+      generateFix: async (_s, ctx) => {
+        seen = { instructions: ctx.instructions, files: ctx.files.map((f) => f.path) };
+        return { changes: [{ path: 'packages/api/src/server.test.ts', content: 'test()' }] };
+      },
+    };
+    const ctx = fakeRepo({
+      'package.json': '{"devDependencies":{"jest":"^29"}}',
+      'packages/api/package.json': '{"devDependencies":{"vitest":"^2"}}',
+      'packages/api/vitest.config.ts': 'export default {}',
+      'packages/api/src/server.ts': 'export const s = 1;',
+    });
+    const plan = await planRepoFixes({ ctx, skills: [coverageSkill], results: [fail(coverageSkill)], provider: spy, branchTemplate: '{type}', coverageMaxFiles: 0, coverageThreshold: 80, user: 'me' });
+    expect(seen.instructions).toMatch(/This code's tests use Vitest, as declared in packages\/api\/package.json\. Import describe, it, expect and vi from 'vitest'/);
+    expect(seen.files).toEqual(['packages/api/src/server.ts', 'packages/api/package.json', 'packages/api/vitest.config.ts']);
+    expect(plan.prs[0].notes.join('\n')).toMatch(/Tests use Vitest \(packages\/api\/package\.json\)/);
+  });
+});

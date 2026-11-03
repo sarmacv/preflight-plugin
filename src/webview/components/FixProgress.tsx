@@ -107,6 +107,11 @@ function RepoProgress({ p }: { p: RepoFixProgress }) {
                 : `tests for ${covGoal} lowest-coverage files (target ${cov.target}%)`}
             </span>
           </div>
+          {cov.frameworks && cov.frameworks.length > 0 && (
+            <div class="framework muted" title="Test framework detected from the nearest build file">
+              <Icon name="beaker" /> {cov.frameworks.join(' · ')}
+            </div>
+          )}
           {estimateNow !== undefined && (
             <div class="cov-meter">
               <span class="muted">Before {cov.before}%</span>

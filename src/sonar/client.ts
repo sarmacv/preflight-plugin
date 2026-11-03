@@ -1,4 +1,5 @@
 // Minimal SonarQube Web API client (self-hosted). No vscode imports so it can be unit tested.
+import { isTestPath } from '../skills/rules/technology';
 
 export class SonarError extends Error {
   constructor(readonly status: number, message: string) {
@@ -14,7 +15,6 @@ export interface FileCoverage {
 
 type Fetch = typeof fetch;
 
-const TEST_PATH = /(^|\/)(tests?|__tests__|spec)\/|\.(test|spec)\.[^/]+$|_test\.[^/]+$|Test\.java$|Tests?\.cs$/i;
 
 export class SonarClient {
   private readonly base: string;
@@ -89,7 +89,7 @@ export class SonarClient {
     );
     const files: FileCoverage[] = [];
     for (const c of data.components) {
-      if (!c.path || TEST_PATH.test(c.path)) continue;
+      if (!c.path || isTestPath(c.path)) continue;
       const m = (name: string) => Number(c.measures.find((x) => x.metric === name)?.value ?? NaN);
       const coverage = m('coverage');
       const uncoveredLines = m('uncovered_lines');
@@ -108,6 +108,4 @@ export function projectKeyFromProperties(text: string | undefined): string | und
   return m?.[1];
 }
 
-export function isTestPath(path: string): boolean {
-  return TEST_PATH.test(path);
-}
+export { isTestPath };

@@ -7,7 +7,7 @@ window.harnessFix = (send, m) => {
     const fixTask = (c, status, extra = {}) => ({ id: c[0], section: 'fixes', label: c[1], status, ...extra });
     const covTask = (f, status, extra = {}) => ({ id: f, section: 'coverage', label: f, status, ...extra });
     const ev = (event, t) => setTimeout(() => send({ type: 'fixEvent', event }), t);
-    ev({ kind: 'repo', repo, base: 'main', tasks: [...checks.map((c) => fixTask(c, 'queued')), ...files.slice(0, 7).map((f) => covTask(f, 'queued'))], coverage: { source: 'estimate', before: 22, target: 80, goal: 7, total: 12, tested: 3 } }, 100);
+    ev({ kind: 'repo', repo, base: 'main', tasks: [...checks.map((c) => fixTask(c, 'queued')), ...files.slice(0, 7).map((f) => covTask(f, 'queued'))], coverage: { source: 'estimate', before: 22, target: 80, goal: 7, total: 12, tested: 3, frameworks: ['Vitest (package.json)'] } }, 100);
     let t = 300;
     for (const c of checks) { ev({ kind: 'task', repo, task: fixTask(c, 'running') }, t); t += 400; ev({ kind: 'task', repo, task: fixTask(c, 'done', { files: c[2] }) }, t); }
     files.slice(0, 7).forEach((f, i) => {
