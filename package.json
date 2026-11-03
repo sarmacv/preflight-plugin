@@ -2,7 +2,7 @@
   "name": "preflight",
   "displayName": "Preflight",
   "description": "Check. Fix. Ship. Scan GitHub repos against org standards and open fix PRs.",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "publisher": "internal",
   "private": true,
   "license": "UNLICENSED",
@@ -87,7 +87,7 @@
           "default": "",
           "format": "uri",
           "order": 10,
-          "description": "Base URL of your self-hosted SonarQube server, e.g. https://sonar.example.com. Store the token with the \"Preflight: Set Sonar Token\" command; it is kept in VS Code secret storage."
+          "markdownDescription": "Base URL of your self-hosted SonarQube server, e.g. `https://sonar.example.com`. Empty (default) means no SonarQube: coverage is estimated from the code. Store the token with **Preflight: Set Sonar Token**."
         },
         "preflight.coverage.threshold": {
           "type": "number",
@@ -95,14 +95,14 @@
           "minimum": 0,
           "maximum": 100,
           "order": 11,
-          "description": "Target test coverage (percent). Without SonarQube, coverage is estimated as the share of source files that have tests."
+          "markdownDescription": "Target test coverage in percent (`0`-`100`, default `80`). With SonarQube connected this is measured line coverage. Without it, coverage is estimated as the share of source files that have a test file named after them. The Coverage PR writes enough tests to reach this value."
         },
         "preflight.coverage.maxFiles": {
           "type": "integer",
           "default": 0,
           "minimum": 0,
           "order": 12,
-          "description": "Optional limit on how many source files one Coverage PR writes tests for. 0 (default) means no limit: Preflight writes tests for exactly as many files as the coverage threshold needs. Set a number to get smaller PRs over several runs."
+          "markdownDescription": "Most source files one Coverage PR writes tests for.\n\n- `0` (default): no limit. Preflight writes tests for exactly as many files as the threshold needs.\n- Any other number: at most that many files per PR, for smaller PRs over several runs. The PR notes say if coverage is still below the threshold."
         },
         "preflight.branch.template": {
           "type": "string",
@@ -114,14 +114,14 @@
           "type": "string",
           "default": "",
           "order": 21,
-          "markdownDescription": "Optional regular expression every generated branch name must match, e.g. `^(feature|chore)/[a-z0-9._-]+$`."
+          "markdownDescription": "Optional regular expression every generated or edited branch name must match, e.g. `^(feature|chore)/[a-z0-9._-]+$`. Empty (default) means only git's own naming rules apply."
         },
         "preflight.staleBranchDays": {
           "type": "integer",
           "default": 90,
           "minimum": 1,
           "order": 30,
-          "description": "A branch with no commits for this many days counts as stale."
+          "markdownDescription": "A branch with no commits for this many days counts as stale (default `90`)."
         },
         "preflight.license.allow": {
           "type": "array",
@@ -130,7 +130,7 @@
           },
           "default": [],
           "order": 40,
-          "markdownDescription": "SPDX licence IDs dependencies may use. Empty means no allow list."
+          "markdownDescription": "SPDX licence IDs dependencies may use. Empty (default) means no allow list: any licence not on the deny list passes."
         },
         "preflight.license.deny": {
           "type": "array",
@@ -144,7 +144,7 @@
             "SSPL-1.0"
           ],
           "order": 41,
-          "markdownDescription": "SPDX licence IDs that fail the licence compliance check."
+          "markdownDescription": "SPDX licence IDs that always fail the licence compliance check. Default: AGPL and SSPL."
         }
       }
     }

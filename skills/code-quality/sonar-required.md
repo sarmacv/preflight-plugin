@@ -10,6 +10,9 @@ rules:
   - builtin:
       name: sonar_required
       params:
+        # Coverage is required when the repo has at least this many application source files
+        # (tests, config and vendored code excluded). Fewer = "Not required"; a repo with
+        # sonar-project.properties is always required regardless of this number.
         min_source_files: 5
 ---
 
