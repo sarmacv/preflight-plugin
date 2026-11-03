@@ -10,6 +10,30 @@ import { Empty, Icon, IconButton } from './Icon';
 const ROW = 22;
 const OVERSCAN = 8;
 
+/** Opens the multi-select organization filter; shows "All", the one org, or how many are picked. */
+function OrgButton() {
+  const picked = [...orgFilter.value].filter((o) => owners.value.some((x) => x.login === o));
+  const label = picked.length === 0 ? 'All' : picked.length === 1 ? picked[0] : `${picked.length} orgs`;
+  const title = picked.length === 0 ? 'Organizations: all' : `Organizations: ${picked.join(', ')}`;
+  return (
+    <button
+      type="button"
+      class={`org-btn${picked.length ? ' active' : ''}`}
+      title={title}
+      aria-label={title}
+      aria-haspopup="dialog"
+      onClick={(e) => {
+        const anchor = (e.currentTarget as HTMLElement).getBoundingClientRect();
+        popover.value = popover.value?.kind === 'orgs' ? undefined : { kind: 'orgs', anchor };
+      }}
+    >
+      <Icon name="organization" />
+      <span class="ellipsis">{label}</span>
+      <Icon name="chevron-down" class="chev" />
+    </button>
+  );
+}
+
 export function RepoList() {
   const scroller = useRef<HTMLDivElement>(null);
   const [scrollTop, setScrollTop] = useState(0);
@@ -73,10 +97,7 @@ export function RepoList() {
             }}
           />
         </div>
-        <select class="org" aria-label="Organization" title="Organization" value={orgFilter.value} onChange={(e) => (orgFilter.value = e.currentTarget.value)}>
-          <option value="">All</option>
-          {owners.value.map((o) => <option key={o} value={o}>{o}</option>)}
-        </select>
+        <OrgButton />
       </div>
       <div class="repos-sub">
         <IconButton icon="check-all" label="Select all shown" onClick={selectAllVisible} disabled={list.length === 0} />
@@ -103,7 +124,7 @@ export function RepoList() {
           action={{ label: reposError.value.action?.label ?? 'Retry', onClick: () => post(reposError.value?.action?.command ?? { type: 'refresh' }) }} />
       ) : list.length === 0 && reposDone.value ? (
         <Empty icon="search" label={repos.value.length ? 'No match' : 'No repos'}
-          action={repos.value.length ? { label: 'Clear', onClick: () => { search.value = ''; orgFilter.value = ''; } } : { label: 'Refresh', onClick: () => post({ type: 'refresh' }) }} />
+          action={repos.value.length ? { label: 'Clear', onClick: () => { search.value = ''; orgFilter.value = new Set(); } } : { label: 'Refresh', onClick: () => post({ type: 'refresh' }) }} />
       ) : (
         <div
           class="repo-scroll"
@@ -131,7 +152,7 @@ function Row({ repo, index, active, onFocus }: { repo: RepoSummary; index: numbe
   const branch = selection.value.get(repo.fullName);
   const selected = branch !== undefined;
   const editable = selected && branchesEditable.value;
-  const showOwner = !orgFilter.value;
+  const showOwner = orgFilter.value.size !== 1;
 
   return (
     <div

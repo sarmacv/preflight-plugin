@@ -21,7 +21,7 @@ export function onHostMessage(handler: (m: HostMessage) => void): void {
 
 export interface PersistedState {
   selection: [string, string][];
-  orgFilter: string;
+  orgFilter: string[] | string;
   excluded: string[];
   leftTab: 'repos' | 'checks';
 }

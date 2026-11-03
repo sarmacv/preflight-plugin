@@ -24,6 +24,15 @@
         setTimeout(() => connect(), 800);
       }
       if (m.type === 'scan') window.harnessScan.run(send, m);
+      if (m.type === 'importSkills') {
+        const imported = { id: 'api-design-review', name: 'API design review', category: 'api-standards', categoryName: 'API Standards', severity: 'high', evaluation: 'ai', fixable: false, fixPr: 'fixes', imported: true };
+        window.harnessScan.checks.push(imported);
+        setTimeout(() => { send({ type: 'catalog', checks: window.harnessScan.checks, errors: [] }); send({ type: 'skillsImported', ids: [imported.id] }); }, 400);
+      }
+      if (m.type === 'removeSkill') {
+        window.harnessScan.checks = window.harnessScan.checks.filter((c) => c.id !== m.id);
+        send({ type: 'catalog', checks: window.harnessScan.checks, errors: [] });
+      }
       window.harnessFix(send, m);
       if (m.type === 'loadBranches') setTimeout(() => send({ type: 'branches', repo: m.repo, branches: ['main', 'develop', 'release/2.4', 'feature/sso-login'] }), 200);
     },
@@ -31,7 +40,7 @@
 
   function connect() {
         send({ type: 'auth', auth: { status: 'signedIn', user: { login: 'vchunduri', name: 'V Chunduri', avatarUrl: '../../media/icon.png' },
-          orgs: orgs.map((o) => ({ login: o, authorized: o !== 'acme-data', ssoUrl: `https://github.com/orgs/${o}/sso` })) } });
+          orgs: [...orgs.map((o) => ({ login: o, authorized: o !== 'acme-data', ssoUrl: `https://github.com/orgs/${o}/sso` })), { login: 'acme-legacy', authorized: true, restricted: true, requestUrl: 'https://github.com/settings/applications' }] } });
         send({ type: 'repos', repos: repos.slice(0, 30), done: false, reset: true });
         setTimeout(() => send({ type: 'repos', repos: repos.slice(30), done: true, reset: false }), 300);
         send({ type: 'rateLimit', rateLimit: { state: 'ok', remaining: 4821, limit: 5000, reset: Date.now() / 1000 + 1800 } });

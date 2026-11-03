@@ -1,6 +1,7 @@
 import { useState } from 'preact/hooks';
 import type { CheckMeta } from '../../shared/protocol';
-import { catalog, checkCounts, excludedChecks, setChecksExcluded, startScan } from '../store';
+import { catalog, catalogErrors, checkCounts, excludedChecks, justImported, setChecksExcluded, startScan } from '../store';
+import { post } from '../vscode';
 
 /** Checkbox convention: Space toggles, Enter scans (as everywhere else in the panel). */
 const enterScans = (e: KeyboardEvent) => {
@@ -70,6 +71,13 @@ export function ChecksPane() {
         <span class="count" title={`${counts.selected} of ${counts.total} checks will run`}>
           <b>{counts.selected}</b> / {counts.total}
         </span>
+        <span class="spacer" />
+        {catalogErrors.value.length > 0 && (
+          <span class="status s-error" role="img" aria-label={`${catalogErrors.value.length} skill(s) couldn't load`} title={`Couldn't load:\n${catalogErrors.value.join('\n')}`}>
+            <Icon name="warning" />
+          </span>
+        )}
+        <IconButton icon="add" label="Import skills (.md or .zip)" onClick={() => post({ type: 'importSkills' })} />
       </div>
 
       {shownIds.length === 0 ? (
@@ -104,25 +112,34 @@ export function ChecksPane() {
                   items.map((c) => {
                     const on = !excluded.has(c.id);
                     return (
-                      <button
-                        key={c.id}
-                        type="button"
-                        class="pick pick-row sub"
-                        role="checkbox"
-                        aria-checked={on}
-                        title={c.name}
-                        onClick={() => setChecksExcluded([c.id], on)}
-                        onKeyDown={enterScans}
-                      >
-                        <Box state={on ? 'on' : 'off'} />
-                        <span class="ellipsis">{c.name}</span>
-                        {c.evaluation !== 'deterministic' && (
-                          <span class="ai-tag" title={c.evaluation === 'ai' ? 'Reviewed by AI' : 'Rules, then AI review'}>
-                            <Icon name="sparkle" />
-                          </span>
+                      <div key={c.id} class={`pick-row sub${justImported.value.has(c.id) ? ' fresh' : ''}`}>
+                        <button
+                          type="button"
+                          class="pick"
+                          role="checkbox"
+                          aria-checked={on}
+                          title={c.name}
+                          onClick={() => setChecksExcluded([c.id], on)}
+                          onKeyDown={enterScans}
+                        >
+                          <Box state={on ? 'on' : 'off'} />
+                          <span class="ellipsis">{c.name}</span>
+                          {c.imported && (
+                            <span class="imported-tag" title="Imported skill">
+                              <Icon name="package" />
+                            </span>
+                          )}
+                          {c.evaluation !== 'deterministic' && (
+                            <span class="ai-tag" title={c.evaluation === 'ai' ? 'Reviewed by AI' : 'Rules, then AI review'}>
+                              <Icon name="sparkle" />
+                            </span>
+                          )}
+                          <span class={`sev sev-${c.severity}`}>{c.severity}</span>
+                        </button>
+                        {c.imported && (
+                          <IconButton icon="trash" label={`Remove imported check ${c.name}`} class="hover-action" onClick={() => post({ type: 'removeSkill', id: c.id })} />
                         )}
-                        <span class={`sev sev-${c.severity}`}>{c.severity}</span>
-                      </button>
+                      </div>
                     );
                   })}
               </div>

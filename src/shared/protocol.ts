@@ -48,6 +48,8 @@ export interface CheckMeta {
   evaluation: 'deterministic' | 'ai' | 'hybrid';
   fixable: boolean;
   fixPr: 'fixes' | 'coverage';
+  /** Imported by the user (removable), rather than bundled. */
+  imported?: boolean;
 }
 
 export interface GitHubUser {
@@ -61,6 +63,12 @@ export interface OrgAccess {
   /** False when SAML SSO has not been authorised for this session's token. */
   authorized: boolean;
   ssoUrl?: string;
+  /**
+   * The org restricts third-party (OAuth) apps and hasn't approved VS Code's GitHub sign-in, so GitHub
+   * hides its private repos. An org owner must approve it; requestUrl is where the user asks.
+   */
+  restricted?: boolean;
+  requestUrl?: string;
 }
 
 export interface RepoSummary {
@@ -114,6 +122,8 @@ export type HostMessage =
   | { type: 'repoFailed'; repo: string; error: UiError }
   | { type: 'scanFinished'; cancelled: boolean }
   | { type: 'scanError'; error: UiError }
+  /** These checks were just imported; the Checks tab shows and highlights them. */
+  | { type: 'skillsImported'; ids: string[] }
   | { type: 'fixEvent'; event: FixEvent }
   | { type: 'fixPlan'; repos: RepoPlan[]; branchPattern: string }
   | { type: 'fixError'; error: UiError }
@@ -142,4 +152,6 @@ export type WebviewMessage =
   /** repos limits the fix to those repositories (the per-repo Fix button); omitted means every scanned repo. */
   | { type: 'prepareFixes'; provider: ProviderId; repos?: string[] }
   | { type: 'createPrs'; prs: PrSubmission[] }
-  | { type: 'cancelFixes' };
+  | { type: 'cancelFixes' }
+  | { type: 'importSkills' }
+  | { type: 'removeSkill'; id: string };

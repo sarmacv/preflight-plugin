@@ -46,15 +46,28 @@ export function parseSkill(source: string, file: string): Skill {
   };
 }
 
-/** Splits the body on `##` headings (case-insensitive match against the required titles). */
+/**
+ * Splits the body on `##` headings (case-insensitive match against the required titles). Lines inside
+ * fenced code blocks are never headings, so examples containing "## …" stay in their section.
+ */
 export function parseSections(body: string): Partial<Record<SectionTitle, string>> {
   const out: Partial<Record<SectionTitle, string>> = {};
-  const parts = body.split(/^##\s+/m).slice(1);
-  for (const part of parts) {
-    const nl = part.indexOf('\n');
-    const heading = (nl === -1 ? part : part.slice(0, nl)).trim().replace(/[*:]/g, '');
+  let current: { heading: string; lines: string[] } | undefined;
+  const flush = () => {
+    if (!current) return;
+    const heading = current.heading.trim().replace(/[*:]/g, '');
     const title = SECTION_TITLES.find((t) => t.toLowerCase() === heading.toLowerCase());
-    if (title) out[title] = (nl === -1 ? '' : part.slice(nl + 1)).trim();
+    if (title) out[title] = current.lines.join('\n').trim();
+  };
+  let fenced = false;
+  for (const line of body.split('\n')) {
+    if (/^\s*(```|~~~)/.test(line)) fenced = !fenced;
+    const m = !fenced && /^##\s+(.*)$/.exec(line);
+    if (m) {
+      flush();
+      current = { heading: m[1], lines: [] };
+    } else current?.lines.push(line);
   }
+  flush();
   return out;
 }

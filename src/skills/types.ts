@@ -72,6 +72,16 @@ export interface Skill extends Frontmatter {
   sections: Partial<Record<SectionTitle, string>>;
   /** Path relative to the skills root, for diagnostics. */
   file: string;
+  /** Supporting files shipped with a folder skill (references, templates, examples), handed to the model. */
+  resources?: SkillResource[];
+  /** Bundled with the extension, or imported by the user (and removable). */
+  origin?: 'bundled' | 'imported';
+}
+
+export interface SkillResource {
+  /** Path relative to the skill's folder. */
+  path: string;
+  content: string;
 }
 
 export type CheckStatus = 'pass' | 'fail' | 'skipped' | 'error';

@@ -20,6 +20,7 @@ export class GitHubAuth implements vscode.Disposable {
   private _gh: GitHub | undefined;
   private orgs: Org[] = [];
   private readonly ssoBlocked = new Set<string>();
+  private readonly restricted = new Set<string>();
   private readonly subscription: vscode.Disposable;
 
   constructor(
@@ -62,6 +63,7 @@ export class GitHubAuth implements vscode.Disposable {
         login: o.login,
       }));
       this.ssoBlocked.clear();
+      this.restricted.clear();
       this.set({
         status: 'signedIn',
         user: { login: user.login, name: user.name, avatarUrl: user.avatar_url },
@@ -86,12 +88,26 @@ export class GitHubAuth implements vscode.Disposable {
     if (changed) this.set({ ...this._state, orgs: this.orgAccess() });
   }
 
+  /** Record orgs that block VS Code's GitHub sign-in through OAuth App access restrictions. */
+  markRestricted(logins: string[]): void {
+    if (this._state.status !== 'signedIn' || logins.length === 0) return;
+    const before = this.restricted.size;
+    for (const l of logins) this.restricted.add(l);
+    if (this.restricted.size !== before) this.set({ ...this._state, orgs: this.orgAccess() });
+  }
+
+  get orgLogins(): string[] {
+    return this.orgs.map((o) => o.login);
+  }
+
   private orgAccess(): OrgAccess[] {
-    return this.orgs.map((o) =>
-      this.ssoBlocked.has(o.login)
+    return this.orgs.map((o) => {
+      const access: OrgAccess = this.ssoBlocked.has(o.login)
         ? { login: o.login, authorized: false, ssoUrl: orgSsoUrl(o.login) }
-        : { login: o.login, authorized: true },
-    );
+        : { login: o.login, authorized: true };
+      // The user's authorized OAuth apps page is where they request an org's approval for "Visual Studio Code".
+      return this.restricted.has(o.login) ? { ...access, restricted: true, requestUrl: 'https://github.com/settings/applications' } : access;
+    });
   }
 
   private set(state: AuthState): void {

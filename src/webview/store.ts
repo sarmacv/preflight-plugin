@@ -18,6 +18,10 @@ export const scanning = signal(false);
 export const scanError = signal<UiError | undefined>(undefined);
 
 export const catalog = signal<CheckMeta[]>([]);
+/** Skill files that couldn't be loaded (bad frontmatter, missing sections), shown as a warning in Checks. */
+export const catalogErrors = signal<string[]>([]);
+/** Checks imported a moment ago, highlighted in the Checks tab. */
+export const justImported = signal<Set<string>>(new Set());
 export const catalogById = computed(() => new Map(catalog.value.map((c) => [c.id, c])));
 /** Checks excluded from scans by the user (empty = run everything). */
 export const excludedChecks = signal<Set<string>>(new Set(persisted.excluded ?? []));
@@ -59,7 +63,11 @@ export const queueProgress = computed(() => {
 });
 
 export const search = signal('');
-export const orgFilter = signal(persisted.orgFilter ?? '');
+
+/** Organizations (and the personal account) whose repos are shown; empty means all. */
+export const orgFilter = signal<Set<string>>(
+  new Set(Array.isArray(persisted.orgFilter) ? persisted.orgFilter : persisted.orgFilter ? [persisted.orgFilter] : []),
+);
 /** Selected repos mapped to the branch to scan. */
 export const selection = signal<Map<string, string>>(new Map(persisted.selection ?? []));
 
@@ -67,17 +75,57 @@ export type Popover =
   | { kind: 'branch'; repo: string; anchor: DOMRect }
   | { kind: 'model'; anchor: DOMRect }
   | { kind: 'connection'; anchor: DOMRect }
-  | { kind: 'filter'; anchor: DOMRect };
+  | { kind: 'filter'; anchor: DOMRect }
+  | { kind: 'orgs'; anchor: DOMRect };
 export const popover = signal<Popover | undefined>(undefined);
 
-effect(() => saveState({ selection: [...selection.value], orgFilter: orgFilter.value, excluded: [...excludedChecks.value], leftTab: leftTab.value }));
+effect(() => saveState({ selection: [...selection.value], orgFilter: [...orgFilter.value], excluded: [...excludedChecks.value], leftTab: leftTab.value }));
 
-export const owners = computed(() => [...new Set(repos.value.map((r) => r.owner))].sort((a, b) => a.localeCompare(b)));
+export interface OwnerOption {
+  login: string;
+  repos: number;
+  /** The signed-in user's own account rather than an organization. */
+  personal: boolean;
+  /** SSO not yet authorized, so GitHub hides this org's repos. */
+  ssoUrl?: string;
+  /** The org hasn't approved VS Code's GitHub sign-in, so its private repos are hidden. */
+  restricted?: boolean;
+  requestUrl?: string;
+}
+
+/** Every account whose repos can be shown: the user, their orgs (even with no visible repos), and other owners. */
+export const owners = computed<OwnerOption[]>(() => {
+  const counts = new Map<string, number>();
+  for (const r of repos.value) counts.set(r.owner, (counts.get(r.owner) ?? 0) + 1);
+  const a = auth.value;
+  const me = a.status === 'signedIn' ? a.user.login : undefined;
+  const orgs = a.status === 'signedIn' ? a.orgs : [];
+  const logins = new Set([...(me ? [me] : []), ...orgs.map((o) => o.login), ...counts.keys()]);
+  return [...logins]
+    .map((login) => {
+      const org = orgs.find((o) => o.login === login);
+      return { login, repos: counts.get(login) ?? 0, personal: login === me, ssoUrl: org && !org.authorized ? org.ssoUrl : undefined, restricted: org?.restricted, requestUrl: org?.requestUrl };
+    })
+    .sort((x, y) => Number(y.personal) - Number(x.personal) || x.login.localeCompare(y.login));
+});
+
+export function toggleOrg(login: string): void {
+  const next = new Set(orgFilter.value);
+  if (next.has(login)) next.delete(login);
+  else next.add(login);
+  orgFilter.value = next;
+}
+
+/** Show only this organization's repos (from the connection menu). */
+export function onlyOrg(login: string): void {
+  orgFilter.value = new Set([login]);
+  leftTab.value = 'repos';
+}
 
 export const visibleRepos = computed(() => {
   const q = search.value.trim().toLowerCase();
-  const org = orgFilter.value;
-  return repos.value.filter((r) => (!org || r.owner === org) && (!q || r.fullName.toLowerCase().includes(q)));
+  const orgs = orgFilter.value;
+  return repos.value.filter((r) => (orgs.size === 0 || orgs.has(r.owner)) && (!q || r.fullName.toLowerCase().includes(q)));
 });
 
 /** Branch chips become editable once more than one repo is selected. */
@@ -191,7 +239,16 @@ export function handleHostMessage(m: HostMessage): void {
       return;
     case 'catalog':
       catalog.value = m.checks;
+      catalogErrors.value = m.errors;
       return;
+    case 'skillsImported': {
+      // New checks run by default, and the Checks tab shows them.
+      setChecksExcluded(m.ids, false);
+      leftTab.value = 'checks';
+      justImported.value = new Set(m.ids);
+      setTimeout(() => (justImported.value = new Set()), 6000);
+      return;
+    }
     case 'scanStarted': {
       scanning.value = true;
       scanError.value = undefined;

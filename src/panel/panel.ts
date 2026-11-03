@@ -1,11 +1,12 @@
 import * as vscode from 'vscode';
 import type { CheckMeta, HostMessage, ProviderId, RateLimit, WebviewMessage } from '../shared/protocol';
 import { describeError, GitHubAuth } from '../auth/github';
-import { listBranches, listRepos } from '../github/repos';
+import { listAllRepos, listBranches } from '../github/repos';
 import { createGitHubContext } from '../github/repoContext';
 import { availableProviders } from '../ai/providers';
 import { createProvider } from '../ai/lmProvider';
-import { loadSkills, type LoadResult } from '../skills/loader';
+import { loadSkillRoots, type LoadResult } from '../skills/loader';
+import { importSkills, removeImportedSkill } from './skillImport';
 import type { CheckResult, Skill } from '../skills/types';
 import type { RepoContext } from '../engine/context';
 import { runScan } from '../engine/queue';
@@ -39,7 +40,7 @@ export class PreflightPanel implements vscode.Disposable {
   private readonly panel: vscode.WebviewPanel;
   private readonly auth: GitHubAuth;
   private readonly disposables: vscode.Disposable[] = [];
-  private readonly catalog: Promise<LoadResult>;
+  private catalog: Promise<LoadResult>;
   private repoLoad: AbortController | undefined;
   private scanAbort: AbortController | undefined;
   private provider: ProviderId;
@@ -60,10 +61,7 @@ export class PreflightPanel implements vscode.Disposable {
     this.panel.webview.html = renderHtml(this.panel.webview, context.extensionUri, String(context.extension.packageJSON.version ?? ''));
     this.provider = vscode.workspace.getConfiguration('preflight').get<ProviderId>('model.default', 'copilot');
 
-    this.catalog = loadSkills(vscode.Uri.joinPath(context.extensionUri, 'skills').fsPath).then((r) => {
-      for (const e of r.errors) this.output.appendLine(`Skill skipped: ${e}`);
-      return r;
-    });
+    this.catalog = this.loadCatalog();
 
     this.auth = new GitHubAuth(
       (rl) => {
@@ -145,7 +143,46 @@ export class PreflightPanel implements vscode.Disposable {
       case 'cancelFixes':
         this.fixes.cancel();
         return;
+      case 'importSkills':
+        return this.importSkills();
+      case 'removeSkill':
+        return this.removeSkill(m.id);
     }
+  }
+
+  /** Where imported skills are kept: outside the extension folder, so updates don't remove them. */
+  private get importedRoot(): string {
+    return vscode.Uri.joinPath(this.context.globalStorageUri, 'skills').fsPath;
+  }
+
+  private loadCatalog(): Promise<LoadResult> {
+    return loadSkillRoots([
+      { dir: vscode.Uri.joinPath(this.context.extensionUri, 'skills').fsPath, origin: 'bundled' },
+      { dir: this.importedRoot, origin: 'imported' },
+    ]).then((r) => {
+      for (const e of r.errors) this.output.appendLine(`Skill skipped: ${e}`);
+      return r;
+    });
+  }
+
+  private async importSkills(): Promise<void> {
+    const outcome = await importSkills(this.importedRoot, await this.skills, (m) => this.output.appendLine(m));
+    if (!outcome) return;
+    this.catalog = this.loadCatalog();
+    await this.sendCatalog();
+    const n = outcome.imported.length;
+    if (n) {
+      this.post({ type: 'skillsImported', ids: outcome.imported.map((i) => i.id) });
+      void vscode.window.showInformationMessage(`Preflight: imported ${n === 1 ? `"${outcome.imported[0].name}"` : `${n} checks`}.`);
+    }
+    if (outcome.problems.length) void vscode.window.showWarningMessage(`Preflight: ${outcome.problems.join('. ')}`);
+  }
+
+  private async removeSkill(id: string): Promise<void> {
+    const skill = (await this.skills).find((s) => s.id === id);
+    if (!skill || !(await removeImportedSkill(this.importedRoot, skill))) return;
+    this.catalog = this.loadCatalog();
+    await this.sendCatalog();
   }
 
   private async sendCatalog(): Promise<void> {
@@ -159,6 +196,7 @@ export class PreflightPanel implements vscode.Disposable {
       evaluation: s.evaluation,
       fixable: s.fixable,
       fixPr: s.fix_pr,
+      imported: s.origin === 'imported',
     }));
     this.post({ type: 'catalog', checks, errors });
   }
@@ -254,10 +292,11 @@ export class PreflightPanel implements vscode.Disposable {
     const load = (this.repoLoad = new AbortController());
     let first = true;
     try {
-      for await (const page of listRepos(gh, load.signal)) {
+      for await (const page of listAllRepos(gh, this.auth.orgLogins, load.signal)) {
         if (load.signal.aborted || this.auth.state.status !== 'signedIn') return;
         this.post({ type: 'repos', repos: page.repos, done: false, reset: first });
         this.auth.markSsoBlocked(page.ssoPartialOrgIds);
+        this.auth.markRestricted(page.restrictedOrgs ?? []);
         first = false;
       }
       this.post({ type: 'repos', repos: [], done: true, reset: first });

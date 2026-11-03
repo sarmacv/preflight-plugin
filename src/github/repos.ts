@@ -4,7 +4,7 @@ import { parseSsoHeader } from './sso';
 
 const MAX_BRANCHES = 2000;
 
-interface ApiRepo {
+export interface ApiRepo {
   id: number;
   full_name: string;
   name: string;
@@ -36,6 +36,42 @@ export interface RepoPage {
   repos: RepoSummary[];
   /** Org ids GitHub left out because the token isn't SSO-authorised for them. */
   ssoPartialOrgIds: number[];
+  /** Org logins that restrict third-party apps and haven't approved VS Code's sign-in. */
+  restrictedOrgs?: string[];
+}
+
+const status = (err: unknown) => (err as { status?: number }).status;
+
+/** GitHub's wording when an org's OAuth App access restrictions block a request. */
+export function isAppRestriction(err: unknown): boolean {
+  return status(err) === 403 && /OAuth App access restrictions|third-parties is limited/i.test((err as Error).message ?? '');
+}
+
+/**
+ * Everything the user can see: their own listing, then each org's listing (which can include repos the
+ * user listing misses, such as internal repos), de-duplicated. Orgs that block VS Code's sign-in are
+ * reported rather than failing the whole load.
+ */
+export async function* listAllRepos(gh: GitHub, orgs: string[], signal?: AbortSignal): AsyncGenerator<RepoPage> {
+  const seen = new Set<number>();
+  const fresh = (repos: RepoSummary[]) => repos.filter((r) => !seen.has(r.id) && (seen.add(r.id), true));
+  for await (const page of listRepos(gh, signal)) yield { ...page, repos: fresh(page.repos) };
+
+  for (const org of orgs) {
+    if (signal?.aborted) return;
+    try {
+      for await (const page of gh.paginate.iterator(gh.rest.repos.listForOrg, { org, type: 'all', per_page: 100, request: { signal } })) {
+        const repos = fresh((page.data as ApiRepo[]).map(toRepoSummary).filter((r): r is RepoSummary => r !== undefined));
+        if (repos.length) yield { repos, ssoPartialOrgIds: [] };
+      }
+      // Restricted orgs still list their public repos, so ask for something private to find out.
+      await gh.request('GET /orgs/{org}/teams', { org, per_page: 1, request: { signal } });
+    } catch (err) {
+      if (signal?.aborted) return;
+      if (isAppRestriction(err)) yield { repos: [], ssoPartialOrgIds: [], restrictedOrgs: [org] };
+      // Other failures (SSO, no permission to list teams) leave what was listed in place.
+    }
+  }
 }
 
 export async function* listRepos(gh: GitHub, signal?: AbortSignal): AsyncGenerator<RepoPage> {

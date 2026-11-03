@@ -689,3 +689,34 @@ button, input, select { font: inherit; color: inherit; }
 .framework { display: flex; align-items: center; gap: 5px; padding: 4px 0 0; font-size: 12px; }
 .framework .codicon { font-size: 12px; }
 .version { margin-left: 10px; font-variant-numeric: tabular-nums; }
+
+/* Organization filter */
+.org-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 120px;
+  height: 24px;
+  padding: 0 6px;
+  border: 1px solid var(--vscode-dropdown-border, transparent);
+  border-radius: var(--pf-radius);
+  background: var(--vscode-dropdown-background);
+  color: var(--vscode-dropdown-foreground);
+  cursor: pointer;
+}
+.org-btn .codicon { font-size: 13px; }
+.org-btn .chev { font-size: 10px; opacity: 0.7; }
+.org-btn.active { border-color: var(--vscode-textLink-foreground); }
+.org-menu { min-width: 240px; }
+.org-list { max-height: 320px; overflow-y: auto; }
+.org-menu .search { margin: 2px 6px 4px; }
+
+/* Imported skills */
+.pick-row.sub { padding-left: 26px; }
+.pick-row.sub .pick { padding-left: 0; }
+.pick-row.sub:hover .hover-action, .pick-row.sub .hover-action:focus-visible { visibility: visible; }
+.pick-row.sub .hover-action { height: 20px !important; min-width: 20px !important; margin-right: 4px; }
+.imported-tag { display: inline-flex; color: var(--vscode-textLink-foreground); }
+.imported-tag .codicon { font-size: 12px; }
+.pick-row.fresh { background: var(--vscode-list-activeSelectionBackground, var(--pf-hover)); color: var(--vscode-list-activeSelectionForeground, inherit); transition: background 1s ease; }
+

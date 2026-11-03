@@ -73,7 +73,7 @@ Preflight finds each repository's Sonar project from `sonar.projectKey` in `sona
 
 ## Use it
 
-1. **Select repositories.** Search, filter by organisation, and tick repositories (Space toggles, Ctrl/Cmd+A selects all shown). Each selected repository scans its default branch. Once two or more are selected, click a branch chip to scan a different branch.
+1. **Select repositories.** Search, pick one or more organisations from the **Organizations** button (or click an org in the avatar menu), and tick repositories (Space toggles, Ctrl/Cmd+A selects all shown). Each selected repository scans its default branch. Once two or more are selected, click a branch chip to scan a different branch.
 2. **Choose checks.** Open the **Checks** tab at the top of the left pane. Every check is listed by category; tick a category or individual checks, use the select-all and clear buttons, or search. The tab and the status strip show how many will run (for example `4/21`). Your choice is remembered.
 3. **Scan** (▶ or Enter). Only the ticked checks run, on every selected repository. To run them on a single repository, select just that one, or use the re-run button on its result card. Repositories are scanned one at a time. Stop (■ or Esc) keeps everything already finished.
 4. **Read results.** Each repository gets a score out of 100 and is **Passing** (no critical or high severity failures) or **Failing**. Critical failures are pinned to the top. A check whose prerequisite failed is skipped ("Needs … to pass first") so the same problem isn't reported twice. Categories with failures open automatically. Click a check to see its evidence. Hover a category or check to re-run just that part.
@@ -135,6 +135,16 @@ Names are also checked against git's rules (no spaces, `..`, `~`, `^`, `:`, and 
 ## Add a new check
 
 Every check is one Markdown file in `skills/<category>/<check-id>.md`. Adding a check needs no engine change: add the file and rebuild the VSIX. A new folder creates a new category.
+
+### Import a skill without rebuilding
+
+In the **Checks** tab, the **+** icon imports a skill from a `.md` file or a `.zip`:
+
+- **Preflight skills** (the format below) are validated and imported as they are. A skill that uses rules this version doesn't have is refused with the reason.
+- **General agent skills**, such as a `SKILL.md` with a `name`, a `description` and free-form instructions, become AI-reviewed checks. The full instructions are the rubric, and every text file in the skill's folder (references, templates, examples) is given to the AI with it.
+- **A zip can hold several skills:** each folder with a `SKILL.md` is one. You choose which to import.
+
+You then pick a category or create a new one, and for general skills, a severity. If an ID is already taken by a built-in check, the import gets a new ID; an earlier import can be replaced or kept alongside. Imported checks are kept in VS Code's storage for Preflight, so they survive updates. They show a package icon, and hovering one shows a remove button. Files in an import are only read, never run.
 
 ```markdown
 ---

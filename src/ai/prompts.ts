@@ -20,6 +20,20 @@ function filesBlock(ctx: EvaluationContext, budget: number): string {
   return parts.join('\n\n') || '(no files provided)';
 }
 
+/** Supporting files shipped with a folder skill. They are part of the check's rubric, not the repo. */
+const MAX_RESOURCE_CHARS = 60_000;
+
+function resourcesBlock(skill: Skill): string {
+  if (!skill.resources?.length) return '';
+  let used = 0;
+  const parts = skill.resources.map((r) => {
+    if (used + r.content.length > MAX_RESOURCE_CHARS) return `<skill-resource path="${r.path}" omitted="too large" />`;
+    used += r.content.length;
+    return `<skill-resource path="${r.path}">\n${r.content}\n</skill-resource>`;
+  });
+  return ['', "The skill's supporting files (part of the check definition, not the repository):", ...parts].join('\n');
+}
+
 function header(skill: Skill, ctx: EvaluationContext): string {
   const r = ctx.repo;
   const paths = r.files.map((f) => f.path);
@@ -31,6 +45,7 @@ function header(skill: Skill, ctx: EvaluationContext): string {
     '<skill>',
     skill.source,
     '</skill>',
+    resourcesBlock(skill),
     '',
     'Repository file list:',
     '<tree>',

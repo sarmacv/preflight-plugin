@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
-import { auth, branches, popover, provider, providers, selection, setBranch } from '../store';
+import { auth, branches, onlyOrg, orgFilter, owners, popover, provider, providers, repos, selection, setBranch, toggleOrg } from '../store';
 import { post } from '../vscode';
 import { FilterMenu } from './FilterMenu';
 import { Icon } from './Icon';
@@ -40,6 +40,7 @@ export function Popovers() {
       {p.kind === 'connection' && <ConnectionMenu />}
       {p.kind === 'branch' && <BranchMenu repo={p.repo} />}
       {p.kind === 'filter' && <FilterMenu />}
+      {p.kind === 'orgs' && <OrgMenu />}
     </div>
   );
 }
@@ -82,6 +83,11 @@ function ModelMenu() {
 function ConnectionMenu() {
   const a = auth.value;
   if (a.status !== 'signedIn') return null;
+  const count = (login: string) => owners.value.find((o) => o.login === login)?.repos ?? 0;
+  const show = (login: string) => {
+    onlyOrg(login);
+    close();
+  };
   return (
     <div class="menu" role="dialog" aria-label="GitHub connection">
       <div class="menu-head">
@@ -90,16 +96,128 @@ function ConnectionMenu() {
         <span class="muted">{a.user.login}</span>
       </div>
       {a.orgs.map((o) => (
-        <div class="menu-item static" key={o.login} title={o.authorized ? 'Authorized' : 'SSO authorization needed'}>
-          <Icon name={o.authorized ? 'pass-filled' : 'warning'} class={o.authorized ? 'ok' : 'warn'} />
-          <span>{o.login}</span>
-          {!o.authorized && o.ssoUrl && (
-            <button type="button" class="link trail" onClick={() => post({ type: 'openExternal', url: o.ssoUrl! })}>
+        <div
+          class="menu-item"
+          key={o.login}
+          role="button"
+          tabIndex={0}
+          title={o.restricted ? `${o.login} hasn't approved VS Code's GitHub sign-in, so its private repos are hidden` : o.authorized ? `Show ${o.login} repos` : 'SSO authorization needed before its repos are visible'}
+          onClick={() => show(o.login)}
+          onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), show(o.login))}
+        >
+          <Icon name={o.restricted ? 'shield' : o.authorized ? 'pass-filled' : 'warning'} class={o.authorized && !o.restricted ? 'ok' : 'warn'} />
+          <span class="ellipsis">{o.login}</span>
+          {o.restricted && o.requestUrl ? (
+            <button
+              type="button"
+              class="link trail"
+              title="Opens your authorized apps on GitHub: choose Visual Studio Code and request access for this organization"
+              onClick={(e) => {
+                e.stopPropagation();
+                post({ type: 'openExternal', url: o.requestUrl! });
+              }}
+            >
+              Request access
+            </button>
+          ) : !o.authorized && o.ssoUrl ? (
+            <button
+              type="button"
+              class="link trail"
+              onClick={(e) => {
+                e.stopPropagation();
+                post({ type: 'openExternal', url: o.ssoUrl! });
+              }}
+            >
               Authorize
             </button>
+          ) : (
+            <span class="muted trail tabular">{count(o.login)}</span>
           )}
         </div>
       ))}
+    </div>
+  );
+}
+
+/** Multi-select organization filter for the repo list. */
+function OrgMenu() {
+  const [q, setQ] = useState('');
+  const picked = orgFilter.value;
+  const all = owners.value;
+  const shown = all.filter((o) => o.login.toLowerCase().includes(q.toLowerCase()));
+  return (
+    <div class="menu org-menu" role="dialog" aria-label="Organizations">
+      {all.length > 6 && (
+        <div class="search small">
+          <Icon name="search" />
+          <input autoFocus aria-label="Filter organizations" placeholder="Organization" value={q} onInput={(e) => setQ(e.currentTarget.value)} />
+        </div>
+      )}
+      <div
+        class="menu-item"
+        role="menuitemcheckbox"
+        aria-checked={picked.size === 0}
+        tabIndex={0}
+        onClick={() => (orgFilter.value = new Set())}
+        onKeyDown={(e) => (e.key === ' ' || e.key === 'Enter') && (e.preventDefault(), (orgFilter.value = new Set()))}
+      >
+        <span class={`check${picked.size === 0 ? ' on' : ''}`} aria-hidden="true">{picked.size === 0 && <Icon name="check" />}</span>
+        <span>All</span>
+        <span class="muted trail tabular">{repos.value.length}</span>
+      </div>
+      <div class="menu-sep" />
+      <div class="org-list">
+        {shown.map((o) => {
+          const on = picked.has(o.login);
+          return (
+            <div
+              key={o.login}
+              class="menu-item"
+              role="menuitemcheckbox"
+              aria-checked={on}
+              tabIndex={0}
+              title={o.restricted ? `${o.login} hasn't approved VS Code's GitHub sign-in, so only its public repos are listed` : o.ssoUrl ? 'SSO authorization needed before its repos are visible' : o.login}
+              onClick={() => toggleOrg(o.login)}
+              onKeyDown={(e) => (e.key === ' ' || e.key === 'Enter') && (e.preventDefault(), toggleOrg(o.login))}
+            >
+              <span class={`check${on ? ' on' : ''}`} aria-hidden="true">{on && <Icon name="check" />}</span>
+              <Icon name={o.personal ? 'account' : 'organization'} class="muted" />
+              <span class="ellipsis">{o.login}</span>
+              {o.restricted && o.requestUrl ? (
+                <button
+                  type="button"
+                  class="link trail"
+                  title="Opens your authorized apps on GitHub: choose Visual Studio Code and request access for this organization"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    post({ type: 'openExternal', url: o.requestUrl! });
+                  }}
+                >
+                  Request access
+                </button>
+              ) : o.ssoUrl ? (
+                <button
+                  type="button"
+                  class="link trail"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    post({ type: 'openExternal', url: o.ssoUrl! });
+                  }}
+                >
+                  Authorize
+                </button>
+              ) : (
+                <span class="muted trail tabular">{o.repos}</span>
+              )}
+            </div>
+          );
+        })}
+        {shown.length === 0 && (
+          <div class="menu-item static muted">
+            <Icon name="circle-slash" /> No match
+          </div>
+        )}
+      </div>
     </div>
   );
 }

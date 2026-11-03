@@ -41,7 +41,7 @@ window.harnessScan = (() => {
         setTimeout(() => send({ type: 'checkStarted', repo: target.repo, checkId: id }), t);
         t += 90;
         setTimeout(() => {
-          let [status, msg] = outcome[id];
+          let [status, msg] = outcome[id] ?? ['fail', 'AI review: 2 of 5 API guidelines not met'];
           if (ri > 0 && status === 'fail' && c.severity !== 'critical') status = 'pass';
           const r = { checkId: id, name: c.name, category: c.category, categoryName: c.categoryName, severity: c.severity, status, evidence: [{ message: msg, url: 'https://github.com/' + target.repo }, { message: 'Second evidence line with more detail.' }], fixable: c.fixable, fixPr: c.fixPr, durationMs: 40 };
           results.push(r);
