@@ -295,8 +295,8 @@ button, input, select { font: inherit; color: inherit; }
   padding: 0 8px;
   font-size: 11px;
   border-top: 1px solid var(--pf-border);
-  background: var(--vscode-statusBar-background, var(--vscode-sideBar-background));
-  color: var(--vscode-statusBar-foreground, var(--vscode-foreground));
+  background: var(--vscode-sideBar-background, var(--vscode-editor-background));
+  color: var(--vscode-foreground);
 }
 .strip .codicon { font-size: 12px; }
 .strip-left { display: inline-flex; align-items: center; gap: 4px; font-variant-numeric: tabular-nums; }
