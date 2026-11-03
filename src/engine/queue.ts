@@ -34,7 +34,7 @@ export interface ScanSummary {
   completed: string[];
 }
 
-/** Prerequisites before dependents, otherwise catalogue order. Cycles are broken by catalogue order. */
+/** Prerequisites (and `after` checks) before dependents, otherwise catalogue order. Cycles are broken by catalogue order. */
 export function dependencyOrder(skills: Skill[]): Skill[] {
   const byId = new Map(skills.map((s) => [s.id, s]));
   const out: Skill[] = [];
@@ -42,7 +42,7 @@ export function dependencyOrder(skills: Skill[]): Skill[] {
   const visit = (s: Skill) => {
     if (state.get(s.id)) return;
     state.set(s.id, 'visiting');
-    for (const dep of s.depends_on) {
+    for (const dep of [...s.depends_on, ...s.after]) {
       const d = byId.get(dep);
       if (d && !state.get(d.id)) visit(d);
     }

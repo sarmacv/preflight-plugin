@@ -12,6 +12,8 @@ export interface ScanSettings {
 
 /** The slice of the Sonar client the checks need. */
 export interface SonarAccess {
+  /** The repo's project on the SonarQube server, if it has one. */
+  findProject(ctx: RepoContext): Promise<{ projectKey: string; url: string } | undefined>;
   coverage(ctx: RepoContext): Promise<{ projectKey: string; coverage: number | undefined; url: string } | undefined>;
 }
 

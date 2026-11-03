@@ -2,10 +2,12 @@
 id: sonar-onboarded
 name: Sonar onboarded
 category: code-quality
+category_name: Sonar Code Coverage
 severity: high
 evaluation: deterministic
 fixable: true
 fix_pr: fixes
+depends_on: [sonar-required]
 rules:
   - any_of:
       - any_file_exists: [sonar-project.properties, .sonarcloud.properties]
@@ -16,6 +18,8 @@ rules:
           globs: ['**/pom.xml', '**/build.gradle', '**/build.gradle.kts']
           pattern: 'sonar-maven-plugin|org\.sonarqube'
           description: the Sonar build plugin
+      - builtin:
+          name: sonar_project_exists
 fix:
   kind: template
   path: sonar-project.properties
@@ -27,17 +31,17 @@ fix:
     sonar.exclusions=**/node_modules/**,**/dist/**,**/build/**,**/vendor/**
     sonar.tests=.
     sonar.test.inclusions=**/*test*/**,**/*.test.*,**/*.spec.*,**/*_test.*
-depends_on: [sonar-required]
 ---
 
 ## What this checks
-The repository is analysed by our self-hosted SonarQube, so code quality and coverage are tracked over time.
+The repository is analysed by our self-hosted SonarQube, so coverage is tracked over time. Runs only when "Sonar coverage required" says the repository needs coverage.
 
 ## How to evaluate
 Look for any of:
 - `sonar-project.properties` or `.sonarcloud.properties` in the repository root.
 - A CI configuration (GitHub Actions workflow, Jenkinsfile, and so on) that runs a Sonar scan or uses `SONAR_TOKEN`.
 - A Maven or Gradle build file that applies the Sonar plugin.
+- A project for this repository on the configured SonarQube server (found by `sonar.projectKey`, then the repository name, otherwise the project the user picks). This covers teams that configure Sonar entirely in CI.
 
 ## Pass criteria
 At least one of the signals above is present.
@@ -46,4 +50,4 @@ At least one of the signals above is present.
 None of the signals are present.
 
 ## How to fix
-Add `sonar-project.properties` with the project key set to the repository name, sources and tests configured, and build output excluded. The CI pipeline must also run the scanner; if it doesn't, the "CI runs tests and Sonar" check covers that change.
+Add `sonar-project.properties` with the project key set to the repository name, sources and tests configured, and build output excluded. The same Fix also opens the Coverage PR when coverage fails, so no second scan is needed. The CI pipeline must also run the scanner; if it doesn't, the "CI runs tests and Sonar" check covers that change.

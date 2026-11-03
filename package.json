@@ -2,7 +2,7 @@
   "name": "preflight",
   "displayName": "Preflight",
   "description": "Check. Fix. Ship. Scan GitHub repos against org standards and open fix PRs.",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "publisher": "internal",
   "private": true,
   "license": "UNLICENSED",

@@ -47,6 +47,8 @@ export const FrontmatterSchema = z
     applies_to: AppliesToSchema.optional(),
     /** Checks that must pass first; if one fails, this check is skipped instead of failing for the same reason. */
     depends_on: z.array(z.string()).default([]),
+    /** Display-only ordering: list this check after these, without depending on their result. */
+    after: z.array(z.string()).default([]),
     rules: z.array(RuleSchema).optional(),
     fix: FixSchema.optional(),
     /** Globs of files handed to the model for ai/hybrid evaluation and ai fixes. */

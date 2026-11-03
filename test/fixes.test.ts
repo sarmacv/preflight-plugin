@@ -139,7 +139,7 @@ describe('planRepoFixes', () => {
     const pr = plan.prs[0];
     expect(pr).toMatchObject({ kind: 'coverage', draft: true, branch: 'coverage' });
     expect(pr.files.map((f) => f.path)).toEqual(['test/a.test.ts']);
-    expect(pr.notes.join('\n')).toMatch(/src\/a\.ts \(10% covered\)/);
+    expect(pr.notes.join('\n')).toMatch(/Targets the lowest-coverage files in Sonar project `api`: src\/a\.ts/);
     expect(pr.notes.join('\n')).toMatch(/src\/a\.ts \(not a test file, dropped\)/);
     expect(pr.notes.join('\n')).toMatch(/missing\.ts \(not found/);
   });
@@ -149,5 +149,26 @@ describe('planRepoFixes', () => {
     const results = [fail(templateSkill), { ...fail(coverageSkill), status: 'pass' as const }];
     const plan = await planRepoFixes({ ctx: fakeRepo(files), skills, results, provider, sonar, branchTemplate: '', coverageMaxFiles: 5, user: 'me' });
     expect(plan.prs.map((p) => p.kind)).toEqual(['fixes']);
+  });
+});
+
+describe('coverage PR without Sonar data', () => {
+  it('targets the largest source files that have no tests', async () => {
+    const files = { 'src/big.ts': 'x'.repeat(500), 'src/small.ts': 'x', 'src/tested.ts': 'x'.repeat(900), 'test/tested.test.ts': '', 'vite.config.ts': 'x'.repeat(2000) };
+    const { untestedSourceFiles } = await import('../src/fix/planner');
+    expect(untestedSourceFiles(fakeRepo(files), 5)).toEqual(['src/big.ts', 'src/small.ts']);
+  });
+
+  it('builds the Coverage PR from untested files when Sonar has no project', async () => {
+    const noData = { lowestCoverage: async () => undefined } as unknown as SonarLink;
+    const files = { 'src/a.ts': 'export const a = 1;', 'package.json': '{}' };
+    const plan = await planRepoFixes({ ctx: fakeRepo(files), skills: [coverageSkill], results: [fail(coverageSkill)], provider, sonar: noData, branchTemplate: '{type}', coverageMaxFiles: 5, user: 'me' });
+    expect(plan.prs[0].files.map((f) => f.path)).toEqual(['test/a.test.ts']);
+    expect(plan.prs[0].notes[0]).toMatch(/largest source files without tests, because Sonar has no coverage data/);
+  });
+
+  it('works with no Sonar connection at all', async () => {
+    const plan = await planRepoFixes({ ctx: fakeRepo({ 'src/a.ts': 'x' }), skills: [coverageSkill], results: [fail(coverageSkill)], provider, branchTemplate: '{type}', coverageMaxFiles: 5, user: 'me' });
+    expect(plan.prs[0].kind).toBe('coverage');
   });
 });

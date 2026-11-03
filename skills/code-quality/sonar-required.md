@@ -2,6 +2,7 @@
 id: sonar-required
 name: Sonar coverage required
 category: code-quality
+category_name: Sonar Code Coverage
 severity: low
 evaluation: deterministic
 fixable: false

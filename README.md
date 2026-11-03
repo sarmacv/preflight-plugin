@@ -56,11 +56,13 @@ All three go through GitHub Copilot in VS Code, so no extra keys are needed. Onl
 
 Needed for the **Sonar code coverage** check and the coverage PR.
 
-Code Quality runs three checks in order:
+The **Sonar Code Coverage** category runs three checks, and one scan gives the full picture:
 
 1. **Sonar coverage required** decides from the repository's technology whether coverage applies. Repositories with application code (TypeScript/JavaScript, Python, Java/Kotlin, Go, C#, Ruby, PHP, Swift, C/C++, Rust, Dart and others) need it. Docs-only, configuration, Terraform/IaC, Helm, Docker and script repositories don't, and the next two checks are skipped with the same reason. A repository with `sonar-project.properties` always needs it.
-2. **Sonar onboarded** checks the repository is set up for SonarQube.
-3. **Sonar code coverage** checks SonarQube's coverage for the scanned branch meets `preflight.coverage.threshold`.
+2. **Sonar onboarded** checks the repository is set up for SonarQube: `sonar-project.properties`, a Sonar scan in CI, the Sonar build plugin, or an existing project on your SonarQube server.
+3. **Sonar code coverage** looks the repository up on SonarQube and checks its coverage for the scanned branch meets `preflight.coverage.threshold`. It runs in the same scan as onboarding rather than waiting for it, and fails if the repository has no Sonar project yet.
+
+One **Fix** handles both: it adds `sonar-project.properties` and opens the draft Coverage PR. When Sonar has no coverage data yet, the Coverage PR targets the largest source files that have no tests, so no second scan is needed first.
 
 1. Set **Preflight › Sonar: Url** (`preflight.sonar.url`) to your server, for example `https://sonar.example.com`.
 2. Run **Preflight: Set Sonar Token** from the Command Palette and paste a SonarQube user token. It is stored in VS Code's secret storage. **Preflight: Clear Sonar Token** removes it.
@@ -145,6 +147,7 @@ fix_pr: fixes                    # fixes | coverage
 applies_to:                      # optional: skip unless a matching file exists
   any_file: ['**/*.py']
 depends_on: [readme-contributing] # optional: skip if any of these checks fails or is skipped
+after: [gitignore-license]       # optional: list after these checks, without depending on them
 rules:                           # required for deterministic and hybrid
   - any_file_exists: [SECURITY.md, .github/SECURITY.md]
 fix:                             # required when fixable

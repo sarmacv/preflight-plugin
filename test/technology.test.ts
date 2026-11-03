@@ -5,6 +5,8 @@ import { runCheck } from '../src/engine/engine';
 import { loadSkills } from '../src/skills/loader';
 import { join } from 'node:path';
 import { fakeRepo } from './helpers/fakeRepo';
+import type { SonarAccess } from '../src/engine/context';
+import type { CheckResult } from '../src/skills/types';
 
 const required = (files: Record<string, string>, min = 5) => evaluateRule({ builtin: { name: 'sonar_required', params: { min_source_files: min } } }, fakeRepo(files));
 const many = (prefix: string, ext: string, n: number) => Object.fromEntries(Array.from({ length: n }, (_, i) => [`${prefix}/f${i}.${ext}`, '']));
@@ -77,10 +79,41 @@ describe('Code Quality chain', () => {
     expect(results['sonar-code-coverage'].message).toBe('Not required: no application code; repo is Docs 3 files');
   });
 
-  it('fails onboarding for a code repo without Sonar and skips coverage', async () => {
+  it('fails onboarding for a code repo without Sonar, and reports coverage in the same scan', async () => {
     const { results } = await run(many('src', 'go', 7));
     expect(results['sonar-required'].status).toBe('pass');
     expect(results['sonar-onboarded'].status).toBe('fail');
-    expect(results['sonar-code-coverage']).toMatchObject({ status: 'skipped', message: 'Needs "Sonar onboarded" to pass first' });
+    // Coverage no longer waits for onboarding; without a Sonar server configured it can only say so.
+    expect(results['sonar-code-coverage']).toMatchObject({ status: 'skipped', message: 'SonarQube is not configured' });
+  });
+});
+
+describe('one scan, full picture (Sonar server configured)', () => {
+  const sonar = (project?: string, coverage?: number): SonarAccess => ({
+    findProject: async () => (project ? { projectKey: project, url: `https://sonar/${project}` } : undefined),
+    coverage: async () => (project ? { projectKey: project, coverage, url: `https://sonar/${project}` } : undefined),
+  });
+  const runChain = async (files: Record<string, string>, access: SonarAccess) => {
+    const { skills } = await loadSkills(join(__dirname, '..', 'skills'));
+    const ctx = fakeRepo(files, { settings: { sonar: access } });
+    const out: Record<string, CheckResult> = {};
+    for (const s of skills.filter((x) => x.category === 'code-quality')) {
+      out[s.id] = await runCheck(s, ctx, { prerequisites: s.depends_on.map((id) => out[id]).filter(Boolean) });
+    }
+    return out;
+  };
+
+  it('counts a project that exists on the server as onboarded, even without sonar-project.properties', async () => {
+    const r = await runChain(many('src', 'ts', 6), sonar('skillcraft', 85));
+    expect(r['sonar-onboarded'].status).toBe('pass');
+    expect(r['sonar-onboarded'].evidence[0].message).toBe('SonarQube project skillcraft exists');
+    expect(r['sonar-code-coverage'].status).toBe('pass');
+  });
+
+  it('fails onboarding and coverage together when the repo has no Sonar project, so one Fix covers both', async () => {
+    const r = await runChain(many('src', 'ts', 6), sonar());
+    expect(r['sonar-onboarded'].status).toBe('fail');
+    expect(r['sonar-code-coverage'].status).toBe('fail');
+    expect(r['sonar-code-coverage'].evidence[0].message).toBe("No SonarQube project for acme/api, so coverage can't be measured");
   });
 });

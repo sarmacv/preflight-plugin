@@ -33,6 +33,13 @@ const IGNORED_DIR = /(^|\/)(node_modules|vendor|third_party|dist|build|out|targe
 /** Tests, and tool configuration written in a programming language. */
 const NOT_SOURCE = /(^|\/)(tests?|__tests__|spec|e2e)\/|\.(test|spec)\.[^/]+$|_test\.[^/]+$|Tests?\.(java|kt|cs)$|(^|\/)[^/]+\.config\.[cm]?[jt]s$|(^|\/)\.[^/]+rc\.[cm]?js$|(^|\/)(conftest|setup|noxfile|fabfile)\.py$|\.d\.ts$|\.min\.js$/i;
 
+/** The coverage language of an application source file, or undefined for tests, config, vendored code and non-code. */
+export function sourceLanguage(path: string): string | undefined {
+  if (IGNORED_DIR.test(path) || NOT_SOURCE.test(path)) return undefined;
+  const ext = /\.([^./]+)$/.exec(path)?.[1]?.toLowerCase();
+  return ext ? COVERAGE_LANGUAGES[ext] : undefined;
+}
+
 export interface TechnologyProfile {
   /** Application source files per coverage language. */
   source: Record<string, number>;

@@ -278,7 +278,8 @@ const sonarCoverage: RuleFn = async (_raw, ctx) => {
   if (!sonar) return skipped('SonarQube is not configured');
   const threshold = ctx.settings.coverageThreshold;
   const found = await sonar.coverage(ctx);
-  if (!found) return errored(`No SonarQube project is linked to ${ctx.fullName}`);
+  // Failing (not erroring) lets one Fix onboard the repo and open the Coverage PR together.
+  if (!found) return fail({ message: `No SonarQube project for ${ctx.fullName}, so coverage can't be measured` });
   const ev = { url: found.url };
   if (found.coverage === undefined) return fail({ message: `Sonar project ${found.projectKey} has no coverage measure`, ...ev });
   const message = `Coverage ${found.coverage.toFixed(1)}% (threshold ${threshold}%) in Sonar project ${found.projectKey}`;
@@ -305,7 +306,18 @@ const sonarRequired: RuleFn = async (raw, ctx) => {
   return skipped(`Not required: ${what}${rest ? `; repo is ${rest} files` : ''}`);
 };
 
+/** Passes when the repo already has a project on the configured SonarQube server (e.g. set up in CI). */
+const sonarProjectExists: RuleFn = async (_raw, ctx) => {
+  const sonar = ctx.settings.sonar;
+  if (!sonar) return skipped('SonarQube is not configured');
+  const project = await sonar.findProject(ctx);
+  return project
+    ? pass({ message: `SonarQube project ${project.projectKey} exists`, url: project.url })
+    : fail({ message: `No SonarQube project for ${ctx.fullName}` });
+};
+
 export const BUILTINS: Record<string, RuleFn> = {
+  sonar_project_exists: sonarProjectExists,
   sonar_required: sonarRequired,
   stale_branches: staleBranches,
   branch_protected: branchProtected,

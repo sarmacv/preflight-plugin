@@ -50,6 +50,10 @@ export function createSonarLink(
   return {
     client,
     resolveKey,
+    async findProject(ctx) {
+      const key = await resolveKey(ctx);
+      return key ? { projectKey: key, url: client.projectUrl(key, branchParam(ctx)) } : undefined;
+    },
     async coverage(ctx) {
       const key = await resolveKey(ctx);
       if (!key) return undefined;

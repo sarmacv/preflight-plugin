@@ -5,6 +5,7 @@ import { contextFiles } from '../engine/engine';
 import type { CheckResult, Skill } from '../skills/types';
 import type { SonarLink } from '../sonar/access';
 import { isTestPath } from '../sonar/client';
+import { sourceLanguage } from '../skills/rules/technology';
 import { checkOrCategory, renderBranchName, type PrKind } from './branchName';
 import { BUILTIN_FIXES } from './builtinFixes';
 
@@ -203,24 +204,61 @@ function nearbyTests(ctx: RepoContext, source: string): string[] {
   return [...new Set([...sameStem, ...sameDir, ...tests])].slice(0, 2);
 }
 
+/** Largest application source files with no test file mentioning their name: the fallback when Sonar has no data. */
+export function untestedSourceFiles(ctx: RepoContext, limit: number): string[] {
+  const tests = ctx.files.map((f) => f.path.split('/').pop()!.toLowerCase()).filter((name, i) => isTestPath(ctx.files[i].path));
+  return ctx.files
+    .filter((f) => sourceLanguage(f.path))
+    .filter((f) => {
+      const stem = f.path.split('/').pop()!.replace(/\.[^.]+$/, '').toLowerCase();
+      return !tests.some((t) => t.includes(stem));
+    })
+    .sort((a, b) => b.size - a.size)
+    .slice(0, limit)
+    .map((f) => f.path);
+}
+
+interface CoverageTarget {
+  path: string;
+  /** Why this file was chosen, for the instructions and PR notes. */
+  reason: string;
+}
+
+async function coverageTargets(opts: PlanOptions): Promise<{ targets: CoverageTarget[]; origin: string; dropped: string[] }> {
+  const { ctx } = opts;
+  const dropped: string[] = [];
+  if (opts.sonar) {
+    opts.onProgress?.(`${ctx.fullName}: finding lowest-coverage files`);
+    // No project or no analysis yet: fall through to the untested-files heuristic.
+    const lowest = await opts.sonar.lowestCoverage(ctx, opts.coverageMaxFiles).catch(() => undefined);
+    if (lowest && lowest.files.length) {
+      const targets: CoverageTarget[] = [];
+      for (const f of lowest.files) {
+        const path = locate(ctx, f.path);
+        if (path) targets.push({ path, reason: `Sonar reports ${f.coverage}% line coverage with ${f.uncoveredLines} uncovered lines` });
+        else dropped.push(`${f.path} (not found in the repository)`);
+      }
+      if (targets.length) return { targets, origin: `the lowest-coverage files in Sonar project \`${lowest.projectKey}\``, dropped };
+    }
+  }
+  const paths = untestedSourceFiles(ctx, opts.coverageMaxFiles);
+  if (paths.length === 0) throw new Error('Every source file already has tests; Sonar has no lower-coverage files to target');
+  return {
+    targets: paths.map((path) => ({ path, reason: 'This file has no tests yet' })),
+    origin: 'the largest source files without tests, because Sonar has no coverage data for this repository yet',
+    dropped,
+  };
+}
+
 async function planCoverage(skill: Skill, pr: PlanPr, opts: PlanOptions): Promise<void> {
   const { ctx } = opts;
-  if (!opts.sonar) throw new Error('SonarQube is not configured');
   if (!opts.provider) throw new Error("AI isn't available for this fix right now");
-  opts.onProgress?.(`${ctx.fullName}: finding lowest-coverage files`);
-  const lowest = await opts.sonar.lowestCoverage(ctx, opts.coverageMaxFiles);
-  if (!lowest || lowest.files.length === 0) throw new Error('Sonar reported no files with uncovered lines');
+  const { targets: chosen, origin, dropped } = await coverageTargets(opts);
 
   const buildFiles = BUILD_FILES.map((p) => ctx.exists(p)).filter((p): p is string => !!p).slice(0, 3);
-  const dropped: string[] = [];
   const targets: string[] = [];
 
-  for (const f of lowest.files) {
-    const source = locate(ctx, f.path);
-    if (!source) {
-      dropped.push(`${f.path} (not found in the repository)`);
-      continue;
-    }
+  for (const { path: source, reason } of chosen) {
     opts.onProgress?.(`${ctx.fullName}: writing tests for ${source}`);
     const paths = [source, ...nearbyTests(ctx, source), ...buildFiles];
     const files: { path: string; content: string }[] = [];
@@ -229,7 +267,7 @@ async function planCoverage(skill: Skill, pr: PlanPr, opts: PlanOptions): Promis
       if (content !== undefined) files.push({ path: p, content });
     }
     const instructions = [
-      `Write unit tests for ${source}. Sonar reports ${f.coverage}% line coverage with ${f.uncoveredLines} uncovered lines.`,
+      `Write unit tests for ${source}. ${reason}.`,
       'Use the same test framework, assertion style, naming and location as the existing tests shown. If there are none, use the conventional framework for this stack declared in the build file.',
       'Cover the public behaviour and the branches that are currently untested. Mock external I/O.',
       'Only create or modify test files. Do not change production code or build files.',
@@ -237,10 +275,10 @@ async function planCoverage(skill: Skill, pr: PlanPr, opts: PlanOptions): Promis
     const proposal = await opts.provider.generateFix(skill, { repo: ctx, files, instructions }, ctx.signal);
     const tests = proposal.changes.filter((c) => isTestPath(c.path) && c.content !== undefined);
     for (const c of proposal.changes.filter((c) => !tests.includes(c))) dropped.push(`${c.path} (not a test file, dropped)`);
-    if ((await addChanges(pr, tests, skill.id, [], ctx)) > 0) targets.push(`${source} (${f.coverage}% covered)`);
+    if ((await addChanges(pr, tests, skill.id, [], ctx)) > 0) targets.push(source);
     if (proposal.notes) pr.notes.push(proposal.notes);
   }
 
-  pr.notes.unshift(`- Targets from Sonar project \`${lowest.projectKey}\`: ${targets.join(', ') || 'none'}.`);
+  pr.notes.unshift(`- Targets ${origin}: ${targets.join(', ') || 'none'}.`);
   if (dropped.length) pr.notes.push(`- Skipped: ${dropped.join('; ')}.`);
 }
