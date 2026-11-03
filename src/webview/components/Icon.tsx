@@ -1,4 +1,4 @@
-import type { JSX } from 'preact';
+import type { ButtonHTMLAttributes } from 'preact';
 
 interface IconProps {
   name: string;
@@ -10,7 +10,7 @@ export function Icon({ name, spin, class: cls }: IconProps) {
   return <i aria-hidden="true" class={`codicon codicon-${name}${spin ? ' codicon-modifier-spin' : ''}${cls ? ` ${cls}` : ''}`} />;
 }
 
-interface IconButtonProps extends Omit<JSX.HTMLAttributes<HTMLButtonElement>, 'label' | 'icon'> {
+interface IconButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'label' | 'icon'> {
   icon: string;
   label: string;
   primary?: boolean;

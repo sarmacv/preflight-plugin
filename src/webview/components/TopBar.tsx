@@ -19,7 +19,7 @@ export function TopBar() {
   const meta = PROVIDER_META[provider.value];
 
   return (
-    <header class="topbar" role="toolbar" aria-label="Preflight">
+    <div class="topbar" role="toolbar" aria-label="Preflight">
       <button type="button" class="conn" title={connLabel} aria-label={connLabel} onClick={(e) => openPopover('connection', e)} disabled={!signedIn}>
         {signedIn ? <img src={a.user.avatarUrl} alt="" width={18} height={18} /> : <Icon name="account" />}
         <span class={`dot ${signedIn ? (degraded ? 'warn' : 'ok') : 'off'}`} />
@@ -55,6 +55,6 @@ export function TopBar() {
       />
       <span class="spacer" />
       <IconButton icon="settings-gear" label="Settings" onClick={() => post({ type: 'openSettings' })} />
-    </header>
+    </div>
   );
 }

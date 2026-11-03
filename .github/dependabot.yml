@@ -4,6 +4,9 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    ignore:
+      # Must not exceed engines.vscode in package.json, or packaging fails. Bump both together by hand.
+      - dependency-name: '@types/vscode'
   - package-ecosystem: github-actions
     directory: /
     schedule:
