@@ -83,8 +83,8 @@ describe('Code Quality chain', () => {
     const { results } = await run(many('src', 'go', 7));
     expect(results['sonar-required'].status).toBe('pass');
     expect(results['sonar-onboarded'].status).toBe('fail');
-    // Coverage no longer waits for onboarding; without a Sonar server configured it can only say so.
-    expect(results['sonar-code-coverage']).toMatchObject({ status: 'skipped', message: 'SonarQube is not configured' });
+    // Coverage no longer waits for onboarding; without SonarQube it is estimated from the code.
+    expect(results['sonar-code-coverage']).toMatchObject({ status: 'fail', message: 'Estimated: 0 of 7 source files have tests (0%, threshold 80%)' });
   });
 });
 
@@ -114,6 +114,53 @@ describe('one scan, full picture (Sonar server configured)', () => {
     const r = await runChain(many('src', 'ts', 6), sonar());
     expect(r['sonar-onboarded'].status).toBe('fail');
     expect(r['sonar-code-coverage'].status).toBe('fail');
-    expect(r['sonar-code-coverage'].evidence[0].message).toBe("No SonarQube project for acme/api, so coverage can't be measured");
+    expect(r['sonar-code-coverage'].evidence[0].message).toBe('Estimated: 0 of 6 source files have tests (0%, threshold 80%)');
+    expect(r['sonar-code-coverage'].evidence[1].message).toBe('5 more source files need tests to reach 80%; counts source files with a test file named after them');
+  });
+});
+
+describe('estimateTestCoverage', () => {
+  const isTest = (p: string) => /(^|\/)(tests?|__tests__)\/|\.(test|spec)\.|_test\.|^test_|\/test_|Test\.java$/.test(p);
+
+  it('matches tests to the source file they are named after', async () => {
+    const { estimateTestCoverage } = await import('../src/skills/rules/technology');
+    const est = estimateTestCoverage(
+      [
+        'src/user.service.ts', 'src/user.service.spec.ts',
+        'app/parser.py', 'tests/test_parser.py',
+        'src/main/java/Foo.java', 'src/test/java/FooTest.java',
+        'pkg/store/store.go', 'pkg/store/store_test.go',
+        'src/router/index.ts', 'test/router/index.test.ts',
+        'src/api/index.ts',
+        'src/untested.ts',
+      ],
+      isTest,
+    );
+    expect(est.tested.sort()).toEqual(['app/parser.py', 'pkg/store/store.go', 'src/main/java/Foo.java', 'src/router/index.ts', 'src/user.service.ts']);
+    expect(est.untested.sort()).toEqual(['src/api/index.ts', 'src/untested.ts']);
+    expect(est.percent).toBe(71);
+  });
+
+  it('does not count a test for a different file with a similar name', async () => {
+    const { estimateTestCoverage } = await import('../src/skills/rules/technology');
+    expect(estimateTestCoverage(['src/user.ts', 'src/user.service.test.ts'], isTest).untested).toEqual(['src/user.ts']);
+  });
+});
+
+describe('sonar_coverage estimate', () => {
+  it('passes exactly at the threshold', async () => {
+    const files = { ...Object.fromEntries(Array.from({ length: 5 }, (_, i) => [`src/m${i}.ts`, ''])), ...Object.fromEntries(Array.from({ length: 4 }, (_, i) => [`src/m${i}.test.ts`, ''])) };
+    const o = await evaluateRule({ builtin: { name: 'sonar_coverage' } }, fakeRepo(files));
+    expect(o.status).toBe('pass');
+    expect(o.evidence[0].message).toBe('Estimated: 4 of 5 source files have tests (80%, threshold 80%)');
+    expect(o.evidence[1].message).toBe('Counts source files with a test file named after them');
+    expect(o.evidence[2].message).toBe('No tests: src/m4.ts');
+  });
+
+  it('says how many more files need tests', async () => {
+    const files = { ...Object.fromEntries(Array.from({ length: 10 }, (_, i) => [`src/m${i}.ts`, ''])), 'src/m0.test.ts': '' };
+    const o = await evaluateRule({ builtin: { name: 'sonar_coverage' } }, fakeRepo(files));
+    expect(o.status).toBe('fail');
+    expect(o.evidence[1].message).toMatch(/^7 more source files need tests to reach 80%/);
   });
 });

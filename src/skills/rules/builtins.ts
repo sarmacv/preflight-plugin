@@ -3,10 +3,11 @@
 import { z } from 'zod';
 import type { RepoContext } from '../../engine/context';
 import { inventory, LOCKFILES, manifestFiles, type Dependency, type Ecosystem } from './dependencies';
-import { errored, fail, pass, RuleConfigError, skipped, type RuleFn } from './types';
+import { errored, fail, pass, RuleConfigError, skipped, type RuleFn, type RuleOutcome } from './types';
 import { inRange } from './versions';
 import { CI_ACTION_GLOBS } from './ciGlobs';
-import { describeCounts, profileOf } from './technology';
+import { describeCounts, estimateTestCoverage, filesNeeded, profileOf } from './technology';
+import { isTestPath } from '../../sonar/client';
 
 function params<T>(schema: z.ZodType<T>, raw: unknown, name: string): T {
   const r = schema.safeParse(raw ?? {});
@@ -273,13 +274,33 @@ const licenseCompliance: RuleFn = async (_raw, ctx) => {
 // ---------------------------------------------------------------------------------------------
 // Sonar
 
+/** Static estimate from the code: share of source files that have a matching test file. */
+function estimatedCoverage(ctx: RepoContext, threshold: number): RuleOutcome {
+  const est = estimateTestCoverage(ctx.files.map((f) => f.path), isTestPath);
+  const total = est.tested.length + est.untested.length;
+  const needed = filesNeeded(est, threshold);
+  const summary = {
+    message: `Estimated: ${est.tested.length} of ${total} source files have tests (${est.percent}%, threshold ${threshold}%)`,
+  };
+  const detail = [
+    {
+      message: needed
+        ? `${needed} more source file${needed === 1 ? ' needs' : 's need'} tests to reach ${threshold}%; counts source files with a test file named after them`
+        : 'Counts source files with a test file named after them',
+    },
+    ...est.untested.slice(0, 10).map((p) => ({ message: `No tests: ${p}`, path: p, url: ctx.htmlUrl(p) })),
+  ];
+  return needed === 0 ? pass(summary, ...detail) : fail(summary, ...detail);
+}
+
 const sonarCoverage: RuleFn = async (_raw, ctx) => {
   const sonar = ctx.settings.sonar;
-  if (!sonar) return skipped('SonarQube is not configured');
   const threshold = ctx.settings.coverageThreshold;
+  // Without Sonar, measure what can be measured from the code instead of reporting nothing.
+  if (!sonar) return estimatedCoverage(ctx, threshold);
   const found = await sonar.coverage(ctx);
   // Failing (not erroring) lets one Fix onboard the repo and open the Coverage PR together.
-  if (!found) return fail({ message: `No SonarQube project for ${ctx.fullName}, so coverage can't be measured` });
+  if (!found) return estimatedCoverage(ctx, threshold);
   const ev = { url: found.url };
   if (found.coverage === undefined) return fail({ message: `Sonar project ${found.projectKey} has no coverage measure`, ...ev });
   const message = `Coverage ${found.coverage.toFixed(1)}% (threshold ${threshold}%) in Sonar project ${found.projectKey}`;

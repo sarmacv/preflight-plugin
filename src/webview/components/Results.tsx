@@ -20,6 +20,12 @@ const STATUS_ICON: Record<RowStatus, { icon: string; label: string; spin?: boole
   queued: { icon: 'circle-outline', label: 'Queued' },
 };
 
+const VERDICT = {
+  cleared: { label: 'Passing', icon: 'pass-filled', title: 'No critical or high severity failures' },
+  grounded: { label: 'Failing', icon: 'error', title: 'Has critical or high severity failures' },
+  incomplete: { label: 'Incomplete', icon: 'warning', title: "Some checks couldn't be evaluated; the score covers only the checks that ran" },
+} as const;
+
 export function StatusIcon({ status }: { status: RowStatus }) {
   const s = STATUS_ICON[status];
   return (
@@ -82,8 +88,8 @@ function RepoCard({ run }: { run: RepoRunView }) {
           <Icon name="git-branch" /> {run.branch}
         </span>
         {verdict && (
-          <span class={`verdict ${verdict}`} title={verdict === 'cleared' ? 'No critical or high severity failures' : 'Has critical or high severity failures'}>
-            <Icon name={verdict === 'cleared' ? 'pass-filled' : 'error'} /> {verdict === 'cleared' ? 'Passing' : 'Failing'}
+          <span class={`verdict ${verdict}`} title={VERDICT[verdict].title}>
+            <Icon name={VERDICT[verdict].icon} /> {VERDICT[verdict].label}
           </span>
         )}
         <span class="spacer" />
@@ -157,7 +163,8 @@ function RunIcon({ run }: { run: RepoRunView }) {
       </span>
     );
   }
-  return <StatusIcon status={run.score && run.score.verdict === 'grounded' ? 'fail' : 'pass'} />;
+  const v = run.score?.verdict;
+  return <StatusIcon status={v === 'grounded' ? 'fail' : v === 'incomplete' ? 'error' : 'pass'} />;
 }
 
 function groupByCategory(metas: CheckMeta[]): [string, CheckMeta[]][] {

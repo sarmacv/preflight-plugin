@@ -2,7 +2,7 @@
   "name": "preflight",
   "displayName": "Preflight",
   "description": "Check. Fix. Ship. Scan GitHub repos against org standards and open fix PRs.",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "publisher": "internal",
   "private": true,
   "license": "UNLICENSED",
@@ -95,15 +95,14 @@
           "minimum": 0,
           "maximum": 100,
           "order": 11,
-          "description": "Minimum overall line coverage (percent) for the coverage check to pass."
+          "description": "Target test coverage (percent). Without SonarQube, coverage is estimated as the share of source files that have tests."
         },
         "preflight.coverage.maxFiles": {
           "type": "integer",
-          "default": 5,
-          "minimum": 1,
-          "maximum": 25,
+          "default": 0,
+          "minimum": 0,
           "order": 12,
-          "description": "Maximum number of lowest-coverage files the Coverage PR writes tests for in one run."
+          "description": "Optional limit on how many source files one Coverage PR writes tests for. 0 (default) means no limit: Preflight writes tests for exactly as many files as the coverage threshold needs. Set a number to get smaller PRs over several runs."
         },
         "preflight.branch.template": {
           "type": "string",

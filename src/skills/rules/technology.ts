@@ -77,3 +77,51 @@ export const describeCounts = (counts: Record<string, number>, limit = 4) =>
 export function profileOf(ctx: RepoContext): TechnologyProfile {
   return technologyProfile(ctx.files.map((f) => f.path));
 }
+
+/** File names too generic to identify what a test covers; their folder name is used instead. */
+const GENERIC_STEMS = new Set(['index', 'main', 'mod', '__init__', 'app', 'lib']);
+
+function stemOf(path: string): string {
+  const parts = path.split('/');
+  const name = parts.pop()!.replace(/\.[^.]+$/, '').toLowerCase();
+  return GENERIC_STEMS.has(name) && parts.length ? `${parts.pop()!.toLowerCase()}/${name}` : name;
+}
+
+/** What a test file covers: its name without test markers (user.service.spec.ts → user.service, test_parser.py → parser). */
+function testedStem(path: string): string {
+  const parts = path.split('/');
+  const name = parts
+    .pop()!
+    .replace(/\.[^.]+$/, '')
+    .replace(/[._-](test|spec)s?$/i, '')
+    .replace(/^(test|spec)[._-]/i, '')
+    .replace(/(Tests?|Spec|IT)$/, '')
+    .toLowerCase();
+  return GENERIC_STEMS.has(name) && parts.length ? `${parts.filter((p) => !/^(tests?|__tests__|spec)$/i.test(p)).pop()?.toLowerCase()}/${name}` : name;
+}
+
+export interface TestEstimate {
+  tested: string[];
+  untested: string[];
+  /** Share of application source files with a matching test file, 0-100. */
+  percent: number;
+}
+
+/** How many more source files need tests for the estimate to reach the threshold. */
+export function filesNeeded(est: TestEstimate, threshold: number): number {
+  const total = est.tested.length + est.untested.length;
+  return Math.max(0, Math.ceil((threshold / 100) * total - 1e-9) - est.tested.length);
+}
+
+/** Static estimate of test coverage: which source files have a test file named after them. */
+export function estimateTestCoverage(paths: readonly string[], isTest: (path: string) => boolean): TestEstimate {
+  const covered = new Set(paths.filter((p) => isTest(p) && !IGNORED_DIR.test(p)).map(testedStem));
+  const tested: string[] = [];
+  const untested: string[] = [];
+  for (const p of paths) {
+    if (!sourceLanguage(p)) continue;
+    (covered.has(stemOf(p)) ? tested : untested).push(p);
+  }
+  const total = tested.length + untested.length;
+  return { tested, untested, percent: total ? Math.round((tested.length / total) * 100) : 100 };
+}

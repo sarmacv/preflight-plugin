@@ -19,7 +19,7 @@ window.harnessScan = (() => {
     'agent-instructions-present': ['pass', 'Found AGENTS.md'],
     'agent-instructions-quality': ['fail', 'AGENTS.md: 212 characters (needs 400); 1 headings (needs 2)'],
     'sonar-onboarded': ['pass', 'Found sonar-project.properties'],
-    'sonar-code-coverage': ['fail', 'Coverage 61.4% is below 80%'],
+    'sonar-code-coverage': ['fail', 'Estimated: 22 of 36 source files have tests (61%, threshold 80%)'],
     'readme-contributing': ['fail', 'None of CONTRIBUTING.md, CONTRIBUTING, .github/CONTRIBUTING.md, docs/CONTRIBUTING.md found'],
     'stale-branches': ['pass', '2 of 14 branches have no commits in 90 days'],
     'default-branch-protected': ['fail', 'main has no branch protection or ruleset'],

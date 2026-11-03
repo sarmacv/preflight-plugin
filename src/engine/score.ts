@@ -2,7 +2,8 @@ import { SEVERITIES, type CheckResult, type Severity } from '../skills/types';
 
 export const SEVERITY_WEIGHT: Record<Severity, number> = { critical: 10, high: 5, medium: 2, low: 1 };
 
-export type Verdict = 'cleared' | 'grounded';
+/** grounded: critical or high failures. incomplete: no such failures, but some checks couldn't be evaluated. */
+export type Verdict = 'cleared' | 'grounded' | 'incomplete';
 
 export interface RepoScore {
   /** 0-100: severity-weighted share of evaluated checks that passed. */
@@ -15,7 +16,7 @@ export interface RepoScore {
   errored: number;
 }
 
-/** A repo is grounded by any critical or high failure. */
+/** A repo is grounded by any critical or high failure, and incomplete when a check couldn't be evaluated. */
 export function scoreRepo(results: readonly CheckResult[]): RepoScore {
   const failures = Object.fromEntries(SEVERITIES.map((s) => [s, 0])) as Record<Severity, number>;
   let earned = 0;
@@ -36,7 +37,7 @@ export function scoreRepo(results: readonly CheckResult[]): RepoScore {
   }
   return {
     score: possible === 0 ? 100 : Math.round((earned / possible) * 100),
-    verdict: failures.critical + failures.high > 0 ? 'grounded' : 'cleared',
+    verdict: failures.critical + failures.high > 0 ? 'grounded' : count.errored > 0 ? 'incomplete' : 'cleared',
     failures,
     ...count,
   };

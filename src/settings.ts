@@ -15,7 +15,7 @@ export function readSettings(): PreflightSettings {
     licenseAllow: c.get<string[]>('license.allow', []),
     licenseDeny: c.get<string[]>('license.deny', []),
     coverageThreshold: c.get('coverage.threshold', 80),
-    coverageMaxFiles: c.get('coverage.maxFiles', 5),
+    coverageMaxFiles: c.get('coverage.maxFiles', 0),
     sonarUrl: c.get('sonar.url', '').replace(/\/+$/, ''),
     branchTemplate: c.get('branch.template', 'preflight/{type}/{date}-{shortid}'),
     branchPattern: c.get('branch.pattern', ''),

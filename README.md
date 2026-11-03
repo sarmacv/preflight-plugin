@@ -60,9 +60,11 @@ The **Sonar Code Coverage** category runs three checks, and one scan gives the f
 
 1. **Sonar coverage required** decides from the repository's technology whether coverage applies. Repositories with application code (TypeScript/JavaScript, Python, Java/Kotlin, Go, C#, Ruby, PHP, Swift, C/C++, Rust, Dart and others) need it. Docs-only, configuration, Terraform/IaC, Helm, Docker and script repositories don't, and the next two checks are skipped with the same reason. A repository with `sonar-project.properties` always needs it.
 2. **Sonar onboarded** checks the repository is set up for SonarQube: `sonar-project.properties`, a Sonar scan in CI, the Sonar build plugin, or an existing project on your SonarQube server.
-3. **Sonar code coverage** looks the repository up on SonarQube and checks its coverage for the scanned branch meets `preflight.coverage.threshold`. It runs in the same scan as onboarding rather than waiting for it, and fails if the repository has no Sonar project yet.
+3. **Sonar code coverage** checks coverage meets `preflight.coverage.threshold` (80% by default). With SonarQube connected it uses the measured line coverage for the scanned branch. Without SonarQube, or before the repository has a Sonar project, it estimates coverage from the code: the share of source files that have a test file named after them (for example "Estimated: 22 of 36 source files have tests (61%)"), and lists the files without tests. It runs in the same scan as onboarding rather than waiting for it.
 
-One **Fix** handles both: it adds `sonar-project.properties` and opens the draft Coverage PR. When Sonar has no coverage data yet, the Coverage PR targets the largest source files that have no tests, so no second scan is needed first.
+A repository is **Incomplete** (amber) instead of Passing when any check couldn't be evaluated, so a perfect score always means everything was actually checked.
+
+One **Fix** handles both: it adds `sonar-project.properties` and opens the draft Coverage PR. When coverage is below the threshold, the Coverage PR writes tests for just enough untested source files to reach it (largest first, each test named after its source file), and its notes show the estimate before and after, for example "61% → 83% (threshold 80%)".
 
 1. Set **Preflight › Sonar: Url** (`preflight.sonar.url`) to your server, for example `https://sonar.example.com`.
 2. Run **Preflight: Set Sonar Token** from the Command Palette and paste a SonarQube user token. It is stored in VS Code's secret storage. **Preflight: Clear Sonar Token** removes it.
@@ -87,7 +89,7 @@ At most two pull requests are opened per repository:
 | PR | Contains | State |
 | --- | --- | --- |
 | Fixes | Deterministic and low-risk fixes: CODEOWNERS, agent instructions, templates, SBOM, Sonar config, pinned actions and similar | Ready for review |
-| Coverage | AI-written tests for the lowest-coverage files reported by Sonar (`preflight.coverage.maxFiles` per run) | Draft |
+| Coverage | AI-written tests for enough untested files to reach the coverage threshold | Draft |
 
 If a repository has no coverage failure, only the Fixes PR is opened.
 
@@ -207,7 +209,7 @@ A skill with a mistake (bad YAML, unknown rule, missing section) is skipped and 
 | `preflight.model.default` | `copilot` | Model preselected in the top bar |
 | `preflight.sonar.url` | | SonarQube base URL (token via **Preflight: Set Sonar Token**) |
 | `preflight.coverage.threshold` | `80` | Minimum coverage percentage |
-| `preflight.coverage.maxFiles` | `5` | Files per coverage PR |
+| `preflight.coverage.maxFiles` | `0` (no limit) | Optional limit on files per Coverage PR. By default Preflight writes tests for exactly as many files as the threshold needs; set a number for smaller PRs over several runs |
 | `preflight.branch.template` | `preflight/{type}/{date}-{shortid}` | Branch naming template |
 | `preflight.branch.pattern` | | Regex every branch name must match |
 | `preflight.staleBranchDays` | `90` | Age at which a branch counts as stale |

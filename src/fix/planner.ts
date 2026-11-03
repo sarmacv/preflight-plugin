@@ -5,7 +5,7 @@ import { contextFiles } from '../engine/engine';
 import type { CheckResult, Skill } from '../skills/types';
 import type { SonarLink } from '../sonar/access';
 import { isTestPath } from '../sonar/client';
-import { sourceLanguage } from '../skills/rules/technology';
+import { estimateTestCoverage, filesNeeded } from '../skills/rules/technology';
 import { checkOrCategory, renderBranchName, type PrKind } from './branchName';
 import { BUILTIN_FIXES } from './builtinFixes';
 
@@ -58,7 +58,10 @@ export interface PlanOptions {
   provider?: ModelProvider;
   sonar?: SonarLink;
   branchTemplate: string;
+  /** Most files a Coverage PR targets; 0 means no limit (as many as the threshold needs). */
   coverageMaxFiles: number;
+  /** Target percentage; the Coverage PR writes enough tests to reach it. Defaults to 80. */
+  coverageThreshold?: number;
   sonarUrl?: string;
   user: string;
   onProgress?: (label: string) => void;
@@ -206,13 +209,9 @@ function nearbyTests(ctx: RepoContext, source: string): string[] {
 
 /** Largest application source files with no test file mentioning their name: the fallback when Sonar has no data. */
 export function untestedSourceFiles(ctx: RepoContext, limit: number): string[] {
-  const tests = ctx.files.map((f) => f.path.split('/').pop()!.toLowerCase()).filter((name, i) => isTestPath(ctx.files[i].path));
+  const untested = new Set(estimateTestCoverage(ctx.files.map((f) => f.path), isTestPath).untested);
   return ctx.files
-    .filter((f) => sourceLanguage(f.path))
-    .filter((f) => {
-      const stem = f.path.split('/').pop()!.replace(/\.[^.]+$/, '').toLowerCase();
-      return !tests.some((t) => t.includes(stem));
-    })
+    .filter((f) => untested.has(f.path))
     .sort((a, b) => b.size - a.size)
     .slice(0, limit)
     .map((f) => f.path);
@@ -230,7 +229,7 @@ async function coverageTargets(opts: PlanOptions): Promise<{ targets: CoverageTa
   if (opts.sonar) {
     opts.onProgress?.(`${ctx.fullName}: finding lowest-coverage files`);
     // No project or no analysis yet: fall through to the untested-files heuristic.
-    const lowest = await opts.sonar.lowestCoverage(ctx, opts.coverageMaxFiles).catch(() => undefined);
+    const lowest = await opts.sonar.lowestCoverage(ctx, opts.coverageMaxFiles > 0 ? opts.coverageMaxFiles : 50).catch(() => undefined);
     if (lowest && lowest.files.length) {
       const targets: CoverageTarget[] = [];
       for (const f of lowest.files) {
@@ -241,13 +240,38 @@ async function coverageTargets(opts: PlanOptions): Promise<{ targets: CoverageTa
       if (targets.length) return { targets, origin: `the lowest-coverage files in Sonar project \`${lowest.projectKey}\``, dropped };
     }
   }
-  const paths = untestedSourceFiles(ctx, opts.coverageMaxFiles);
-  if (paths.length === 0) throw new Error('Every source file already has tests; Sonar has no lower-coverage files to target');
+  // Estimated from the code: write tests for just enough untested files to reach the threshold.
+  const threshold = opts.coverageThreshold ?? 80;
+  const est = estimateTestCoverage(ctx.files.map((f) => f.path), isTestPath);
+  const needed = filesNeeded(est, threshold);
+  if (needed === 0) throw new Error(`Estimated coverage is already ${est.percent}%, at or above ${threshold}%`);
+  const limit = opts.coverageMaxFiles > 0 ? Math.min(needed, opts.coverageMaxFiles) : needed;
+  const paths = untestedSourceFiles(ctx, limit);
+  if (paths.length === 0) throw new Error('Every source file already has tests');
+  if (paths.length < needed) dropped.push(`only ${paths.length} of the ${needed} files needed for ${threshold}% (limit preflight.coverage.maxFiles = ${opts.coverageMaxFiles})`);
   return {
     targets: paths.map((path) => ({ path, reason: 'This file has no tests yet' })),
-    origin: 'the largest source files without tests, because Sonar has no coverage data for this repository yet',
+    origin: `the largest source files without tests (${needed} needed to reach ${threshold}%)`,
     dropped,
   };
+}
+
+/** The test file name the estimate recognises for a source file, in the repo's language conventions. */
+export function expectedTestName(source: string): string {
+  const name = source.split('/').pop()!;
+  const ext = /\.([^.]+)$/.exec(name)?.[1] ?? '';
+  const stem = name.slice(0, name.length - ext.length - 1);
+  switch (ext) {
+    case 'py': return `test_${stem}.py`;
+    case 'go': return `${stem}_test.go`;
+    case 'java': case 'kt': case 'scala': case 'groovy': return `${stem}Test.${ext}`;
+    case 'cs': return `${stem}Tests.cs`;
+    case 'rb': return `${stem}_spec.rb`;
+    case 'php': return `${stem}Test.php`;
+    case 'rs': return `${stem}_test.rs`;
+    case 'dart': return `${stem}_test.dart`;
+    default: return `${stem}.test.${ext}`;
+  }
 }
 
 async function planCoverage(skill: Skill, pr: PlanPr, opts: PlanOptions): Promise<void> {
@@ -258,8 +282,8 @@ async function planCoverage(skill: Skill, pr: PlanPr, opts: PlanOptions): Promis
   const buildFiles = BUILD_FILES.map((p) => ctx.exists(p)).filter((p): p is string => !!p).slice(0, 3);
   const targets: string[] = [];
 
-  for (const { path: source, reason } of chosen) {
-    opts.onProgress?.(`${ctx.fullName}: writing tests for ${source}`);
+  for (const [i, { path: source, reason }] of chosen.entries()) {
+    opts.onProgress?.(`${ctx.fullName}: writing tests ${i + 1} of ${chosen.length}: ${source}`);
     const paths = [source, ...nearbyTests(ctx, source), ...buildFiles];
     const files: { path: string; content: string }[] = [];
     for (const p of paths) {
@@ -268,7 +292,8 @@ async function planCoverage(skill: Skill, pr: PlanPr, opts: PlanOptions): Promis
     }
     const instructions = [
       `Write unit tests for ${source}. ${reason}.`,
-      'Use the same test framework, assertion style, naming and location as the existing tests shown. If there are none, use the conventional framework for this stack declared in the build file.',
+      'Use the same test framework, assertion style and location as the existing tests shown. If there are none, use the conventional framework for this stack declared in the build file.',
+      `Name the test file after the source file, e.g. ${expectedTestName(source)} (or the equivalent this repository already uses), so it is clear which file it tests.`,
       'Cover the public behaviour and the branches that are currently untested. Mock external I/O.',
       'Only create or modify test files. Do not change production code or build files.',
     ].join('\n');
@@ -279,6 +304,16 @@ async function planCoverage(skill: Skill, pr: PlanPr, opts: PlanOptions): Promis
     if (proposal.notes) pr.notes.push(proposal.notes);
   }
 
-  pr.notes.unshift(`- Targets ${origin}: ${targets.join(', ') || 'none'}.`);
+  // Re-run the estimate with the new tests included, so the PR says whether it reaches the threshold.
+  const threshold = opts.coverageThreshold ?? 80;
+  const allPaths = ctx.files.map((f) => f.path);
+  const before = estimateTestCoverage(allPaths, isTestPath);
+  const after = estimateTestCoverage([...allPaths, ...pr.files.map((f) => f.path)], isTestPath);
+  const unmatched = targets.filter((t) => !after.tested.includes(t));
+  pr.notes.unshift(
+    `- Targets ${origin}: ${targets.join(', ') || 'none'}.`,
+    `- Estimated coverage: ${before.percent}% → ${after.percent}% (threshold ${threshold}%)${after.percent >= threshold ? '' : '. Still below the threshold; see below'}.`,
+  );
+  if (unmatched.length) pr.notes.push(`- Tests for ${unmatched.join(', ')} aren't named after their source file, so Preflight's estimate won't count them yet.`);
   if (dropped.length) pr.notes.push(`- Skipped: ${dropped.join('; ')}.`);
 }

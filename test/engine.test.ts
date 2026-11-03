@@ -77,10 +77,11 @@ const res = (severity: Severity, status: CheckResult['status'], id = `${severity
 });
 
 describe('scoring', () => {
-  it('weights by severity and ignores skipped and errored checks', () => {
+  it('weights by severity, ignores skipped and errored checks, and marks errors incomplete', () => {
     const s = scoreRepo([res('critical', 'pass'), res('low', 'fail'), res('high', 'skipped'), res('medium', 'error')]);
     expect(s.score).toBe(91); // 10 / 11
-    expect(s.verdict).toBe('cleared');
+    expect(s.verdict).toBe('incomplete');
+    expect(scoreRepo([res('critical', 'pass'), res('low', 'fail'), res('high', 'skipped')]).verdict).toBe('cleared');
     expect(s).toMatchObject({ passed: 1, failed: 1, skipped: 1, errored: 1 });
   });
 

@@ -658,3 +658,6 @@ button, input, select { font: inherit; color: inherit; }
 .pick .check { width: 14px; height: 14px; }
 .strip-btn { border: 0; background: transparent; color: inherit; padding: 0; cursor: pointer; font-size: inherit; }
 .strip-btn:hover { color: var(--vscode-textLink-foreground); }
+.card.v-incomplete { border-left: 3px solid var(--pf-warn); }
+.verdict.incomplete { color: var(--pf-warn); border: 1px solid var(--pf-warn); }
+.v-incomplete .score { color: var(--pf-warn); }

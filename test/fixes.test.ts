@@ -164,11 +164,65 @@ describe('coverage PR without Sonar data', () => {
     const files = { 'src/a.ts': 'export const a = 1;', 'package.json': '{}' };
     const plan = await planRepoFixes({ ctx: fakeRepo(files), skills: [coverageSkill], results: [fail(coverageSkill)], provider, sonar: noData, branchTemplate: '{type}', coverageMaxFiles: 5, user: 'me' });
     expect(plan.prs[0].files.map((f) => f.path)).toEqual(['test/a.test.ts']);
-    expect(plan.prs[0].notes[0]).toMatch(/largest source files without tests, because Sonar has no coverage data/);
+    expect(plan.prs[0].notes[0]).toMatch(/largest source files without tests \(1 needed to reach 80%\)/);
   });
 
   it('works with no Sonar connection at all', async () => {
     const plan = await planRepoFixes({ ctx: fakeRepo({ 'src/a.ts': 'x' }), skills: [coverageSkill], results: [fail(coverageSkill)], provider, branchTemplate: '{type}', coverageMaxFiles: 5, user: 'me' });
     expect(plan.prs[0].kind).toBe('coverage');
+  });
+});
+
+describe('coverage PR reaches the threshold', () => {
+  // Fake model that writes a correctly named test for the source it was asked about.
+  const naming: ModelProvider = {
+    ...provider,
+    generateFix: async (_skill, ctx) => {
+      const src = ctx.files[0].path;
+      return { changes: [{ path: src.replace(/\.ts$/, '.test.ts'), content: 'test()' }] };
+    },
+  };
+  const repo = (n: number, tested: number) => {
+    const files: Record<string, string> = {};
+    for (let i = 0; i < n; i++) files[`src/m${i}.ts`] = 'x'.repeat(100 + i);
+    for (let i = 0; i < tested; i++) files[`src/m${i}.test.ts`] = '';
+    return fakeRepo(files);
+  };
+
+  it('writes tests for just enough files to reach 80%, and reports before and after', async () => {
+    const plan = await planRepoFixes({ ctx: repo(10, 2), skills: [coverageSkill], results: [fail(coverageSkill)], provider: naming, branchTemplate: '{type}', coverageMaxFiles: 50, coverageThreshold: 80, user: 'me' });
+    const pr = plan.prs[0];
+    expect(pr.files).toHaveLength(6);
+    // Largest untested files first.
+    expect(pr.files[0].path).toBe('src/m9.test.ts');
+    expect(pr.notes[0]).toMatch(/6 needed to reach 80%/);
+    expect(pr.notes[1]).toBe('- Estimated coverage: 20% → 80% (threshold 80%).');
+  });
+
+  it('has no file limit by default, however large the gap', async () => {
+    const plan = await planRepoFixes({ ctx: repo(100, 0), skills: [coverageSkill], results: [fail(coverageSkill)], provider: naming, branchTemplate: '{type}', coverageMaxFiles: 0, coverageThreshold: 80, user: 'me' });
+    expect(plan.prs[0].files).toHaveLength(80);
+    expect(plan.prs[0].notes[1]).toBe('- Estimated coverage: 0% → 80% (threshold 80%).');
+  });
+
+  it('says when an optional file limit keeps it below the threshold', async () => {
+    const plan = await planRepoFixes({ ctx: repo(10, 0), skills: [coverageSkill], results: [fail(coverageSkill)], provider: naming, branchTemplate: '{type}', coverageMaxFiles: 3, coverageThreshold: 80, user: 'me' });
+    const notes = plan.prs[0].notes.join('\n');
+    expect(plan.prs[0].files).toHaveLength(3);
+    expect(notes).toMatch(/0% → 30% \(threshold 80%\)\. Still below the threshold/);
+    expect(notes).toMatch(/only 3 of the 8 files needed for 80%/);
+  });
+
+  it('flags tests that are not named after their source file', async () => {
+    const odd: ModelProvider = { ...provider, generateFix: async () => ({ changes: [{ path: 'test/misc.test.ts', content: 'test()' }] }) };
+    const plan = await planRepoFixes({ ctx: repo(1, 0), skills: [coverageSkill], results: [fail(coverageSkill)], provider: odd, branchTemplate: '{type}', coverageMaxFiles: 50, coverageThreshold: 80, user: 'me' });
+    expect(plan.prs[0].notes.join('\n')).toMatch(/Tests for src\/m0\.ts aren't named after their source file/);
+  });
+
+  it('suggests test names in each language convention', async () => {
+    const { expectedTestName } = await import('../src/fix/planner');
+    expect(['a/user.service.ts', 'app/parser.py', 'pkg/store.go', 'src/Foo.java', 'lib/Bar.cs', 'lib/baz.rb'].map(expectedTestName)).toEqual([
+      'user.service.test.ts', 'test_parser.py', 'store_test.go', 'FooTest.java', 'BarTests.cs', 'baz_spec.rb',
+    ]);
   });
 });

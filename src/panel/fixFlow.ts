@@ -67,6 +67,7 @@ export class FixFlow {
           sonar,
           branchTemplate: settings.branchTemplate,
           coverageMaxFiles: settings.coverageMaxFiles,
+          coverageThreshold: settings.coverageThreshold,
           sonarUrl: settings.sonarUrl,
           user: this.deps.user(),
           onProgress: (label) => this.deps.post({ type: 'fixProgress', label }),
