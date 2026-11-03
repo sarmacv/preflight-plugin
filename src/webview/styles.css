@@ -661,3 +661,28 @@ button, input, select { font: inherit; color: inherit; }
 .card.v-incomplete { border-left: 3px solid var(--pf-warn); }
 .verdict.incomplete { color: var(--pf-warn); border: 1px solid var(--pf-warn); }
 .v-incomplete .score { color: var(--pf-warn); }
+
+/* Fix and PR progress screens */
+.fix-toolbar > .codicon { font-size: 15px; }
+.elapsed { display: inline-flex; align-items: center; gap: 3px; font-variant-numeric: tabular-nums; }
+.tabular { font-variant-numeric: tabular-nums; }
+.progress-card { padding-bottom: 4px; }
+.progress-overall { padding: 0 10px 6px; }
+.meter { position: relative; height: 6px; flex: 1; min-width: 80px; border-radius: 3px; background: var(--pf-border); overflow: visible; }
+.meter-fill { position: absolute; inset: 0 auto 0 0; border-radius: 3px; background: var(--vscode-progressBar-background); transition: width 0.3s ease; }
+.meter-marker { position: absolute; top: -3px; bottom: -3px; width: 2px; margin-left: -1px; background: var(--vscode-foreground); opacity: 0.7; }
+.psection { border-top: 1px solid var(--pf-border); padding: 6px 10px 4px; }
+.psection-head { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; min-height: 22px; }
+.cov-meter { display: flex; align-items: center; gap: 10px; padding: 6px 0 4px; font-size: 12px; white-space: nowrap; }
+.counts { display: flex; flex-wrap: wrap; gap: 6px; padding: 2px 0 6px; }
+.count-chip { display: inline-flex; align-items: center; gap: 4px; height: 20px; padding: 0 8px; border-radius: 10px; font-size: 12px; background: var(--vscode-badge-background); color: var(--vscode-badge-foreground); font-variant-numeric: tabular-nums; }
+.count-chip .codicon { font-size: 12px; }
+.count-chip.ok .codicon { color: var(--pf-pass); }
+.count-chip.warn .codicon { color: var(--pf-warn); }
+.tasks { list-style: none; margin: 0; padding: 0; max-height: 420px; overflow-y: auto; }
+.task { display: flex; align-items: center; gap: 8px; height: var(--pf-row); padding: 0 2px; }
+.task:hover { background: var(--pf-hover); }
+.task-label { flex: 0 1 auto; max-width: 50%; }
+.task-detail { flex: 1 1 0; font-size: 12px; text-align: right; }
+.task.t-queued .task-label { color: var(--pf-muted); }
+.steps .task-label { max-width: 60%; }

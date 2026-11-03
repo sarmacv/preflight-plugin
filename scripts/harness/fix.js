@@ -1,8 +1,27 @@
 // Simulated fix plan and PR results for the harness.
 window.harnessFix = (send, m) => {
   if (m.type === 'prepareFixes') {
-    send({ type: 'fixProgress', label: 'acme/api-gateway: CODEOWNERS present' });
-    setTimeout(() => send({ type: 'fixProgress', label: 'acme/api-gateway: writing tests for src/router.ts' }), 500);
+    const repo = 'acme/api-gateway';
+    const checks = [['codeowners-present', 'CODEOWNERS present', ['.github/CODEOWNERS']], ['agent-instructions-quality', 'Agent instructions have real content', ['AGENTS.md']], ['sonar-onboarded', 'Sonar onboarded', ['sonar-project.properties']]];
+    const files = ['src/router.ts', 'src/auth/session.ts', 'src/core/index.ts', 'src/handlers/users.ts', 'src/handlers/orders.ts', 'src/util/retry.ts', 'src/config.ts', 'src/metrics.ts'];
+    const fixTask = (c, status, extra = {}) => ({ id: c[0], section: 'fixes', label: c[1], status, ...extra });
+    const covTask = (f, status, extra = {}) => ({ id: f, section: 'coverage', label: f, status, ...extra });
+    const ev = (event, t) => setTimeout(() => send({ type: 'fixEvent', event }), t);
+    ev({ kind: 'repo', repo, base: 'main', tasks: [...checks.map((c) => fixTask(c, 'queued')), ...files.slice(0, 7).map((f) => covTask(f, 'queued'))], coverage: { source: 'estimate', before: 22, target: 80, goal: 7, total: 12, tested: 3 } }, 100);
+    let t = 300;
+    for (const c of checks) { ev({ kind: 'task', repo, task: fixTask(c, 'running') }, t); t += 400; ev({ kind: 'task', repo, task: fixTask(c, 'done', { files: c[2] }) }, t); }
+    files.slice(0, 7).forEach((f, i) => {
+      const start = t + i * 300;
+      ev({ kind: 'task', repo, task: covTask(f, 'running') }, start);
+      if (f === 'src/core/index.ts') {
+        ev({ kind: 'task', repo, task: covTask(f, 'skipped', { files: ['test/index.test.ts'], detail: "Test isn't named after this file, so it won't count; trying another file" }) }, start + 700);
+        ev({ kind: 'task', repo, task: covTask(files[7], 'running', { replacement: true }) }, start + 750);
+        ev({ kind: 'task', repo, task: covTask(files[7], 'done', { replacement: true, files: ['src/metrics.test.ts'] }) }, start + 1600);
+      } else {
+        ev({ kind: 'task', repo, task: covTask(f, 'done', { files: [f.replace(/\.ts$/, '.test.ts')] }) }, start + 900);
+      }
+    });
+    if (new URLSearchParams(location.search).get('hold') === 'fix') return;
     setTimeout(() => send({
       type: 'fixPlan',
       branchPattern: '^preflight/',
@@ -33,10 +52,19 @@ window.harnessFix = (send, m) => {
           },
         ],
       }],
-    }), 1100);
+    }), t + 7 * 300 + 2000);
   }
   if (m.type === 'createPrs') {
-    setTimeout(() => send({ type: 'prCreating', total: m.prs.length }), 300);
-    setTimeout(() => send({ type: 'prResults', results: m.prs.map((p, i) => ({ id: p.id, repo: p.repo, kind: p.kind, url: `https://github.com/${p.repo}/pull/${41 + i}`, number: 41 + i, branch: p.branch, warnings: i === 1 ? ['Draft PRs aren\'t available for this repository, so it was opened as a regular PR titled [Draft]'] : [] })) }), 1200);
+    const pending = m.prs.map((p) => ({ id: p.id, repo: p.repo, kind: p.kind, branch: p.branch, base: 'main', files: p.files.length, draft: p.kind === 'coverage' }));
+    setTimeout(() => send({ type: 'prCreating', prs: pending }), 300);
+    pending.forEach((p, i) => {
+      const base = 500 + i * 1400;
+      [['branch', p.branch], ['commit', p.files + ' files'], ['pr', '#' + (41 + i)], ['label', 'preflight']].forEach(([step, detail], j) => {
+        setTimeout(() => send({ type: 'prStep', id: p.id, step, status: 'running' }), base + j * 300);
+        setTimeout(() => send({ type: 'prStep', id: p.id, step, status: 'done', detail }), base + j * 300 + 250);
+      });
+    });
+    if (new URLSearchParams(location.search).get('hold') === 'pr') return;
+    setTimeout(() => send({ type: 'prResults', results: m.prs.map((p, i) => ({ id: p.id, repo: p.repo, kind: p.kind, url: `https://github.com/${p.repo}/pull/${41 + i}`, number: 41 + i, branch: p.branch, warnings: i === 1 ? ['Draft PRs aren\'t available for this repository, so it was opened as a regular PR titled [Draft]'] : [] })) }), 500 + pending.length * 1400 + 800);
   }
 };

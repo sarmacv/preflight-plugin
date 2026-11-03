@@ -81,14 +81,21 @@ export function profileOf(ctx: RepoContext): TechnologyProfile {
 /** File names too generic to identify what a test covers; their folder name is used instead. */
 const GENERIC_STEMS = new Set(['index', 'main', 'mod', '__init__', 'app', 'lib']);
 
-function stemOf(path: string): string {
+const TEST_DIR = /^(tests?|__tests__|spec|specs)$/i;
+
+/**
+ * Names a source file can be tested under. Generic names (index, main, ...) are qualified by their
+ * folder: src/core/index.ts is tested by core/index.test.ts or core.test.ts, not by any index.test.ts.
+ */
+function sourceKeys(path: string): string[] {
   const parts = path.split('/');
   const name = parts.pop()!.replace(/\.[^.]+$/, '').toLowerCase();
-  return GENERIC_STEMS.has(name) && parts.length ? `${parts.pop()!.toLowerCase()}/${name}` : name;
+  const folder = parts.pop()?.toLowerCase();
+  return GENERIC_STEMS.has(name) && folder ? [`${folder}/${name}`, folder] : [name];
 }
 
 /** What a test file covers: its name without test markers (user.service.spec.ts → user.service, test_parser.py → parser). */
-function testedStem(path: string): string {
+function testKeys(path: string): string[] {
   const parts = path.split('/');
   const name = parts
     .pop()!
@@ -97,7 +104,8 @@ function testedStem(path: string): string {
     .replace(/^(test|spec)[._-]/i, '')
     .replace(/(Tests?|Spec|IT)$/, '')
     .toLowerCase();
-  return GENERIC_STEMS.has(name) && parts.length ? `${parts.filter((p) => !/^(tests?|__tests__|spec)$/i.test(p)).pop()?.toLowerCase()}/${name}` : name;
+  const folder = parts.filter((d) => !TEST_DIR.test(d)).pop()?.toLowerCase();
+  return GENERIC_STEMS.has(name) && folder ? [`${folder}/${name}`] : [name];
 }
 
 export interface TestEstimate {
@@ -115,13 +123,18 @@ export function filesNeeded(est: TestEstimate, threshold: number): number {
 
 /** Static estimate of test coverage: which source files have a test file named after them. */
 export function estimateTestCoverage(paths: readonly string[], isTest: (path: string) => boolean): TestEstimate {
-  const covered = new Set(paths.filter((p) => isTest(p) && !IGNORED_DIR.test(p)).map(testedStem));
+  const covered = new Set(paths.filter((p) => isTest(p) && !IGNORED_DIR.test(p)).flatMap(testKeys));
   const tested: string[] = [];
   const untested: string[] = [];
   for (const p of paths) {
     if (!sourceLanguage(p)) continue;
-    (covered.has(stemOf(p)) ? tested : untested).push(p);
+    (sourceKeys(p).some((k) => covered.has(k)) ? tested : untested).push(p);
   }
   const total = tested.length + untested.length;
   return { tested, untested, percent: total ? Math.round((tested.length / total) * 100) : 100 };
+}
+
+/** Whether these test files would make the estimate count `source` as tested. */
+export function testsRecognised(source: string, tests: readonly string[], isTest: (path: string) => boolean): boolean {
+  return estimateTestCoverage([source, ...tests], isTest).tested.includes(source);
 }

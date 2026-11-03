@@ -121,3 +121,29 @@ describe('openPullRequest', () => {
     expect(w.calls).toContain('deleteRef heads/preflight/fixes/x');
   });
 });
+
+describe('openPullRequest progress steps', () => {
+  it('reports each step as it starts and finishes', async () => {
+    const w = fakeWriter();
+    const steps: string[] = [];
+    await openPullRequest(w.gh, req(), (step, status, detail) => steps.push(`${step} ${status}${detail ? ` ${detail}` : ''}`));
+    expect(steps).toEqual([
+      'branch running', 'branch done preflight/fixes/x',
+      'commit running', 'commit done 2 files',
+      'pr running', 'pr done #7',
+      'label running', 'label done preflight',
+    ]);
+  });
+
+  it('marks the failing step and a label warning', async () => {
+    const failing = fakeWriter({ commitFails: true });
+    const steps: string[] = [];
+    await expect(openPullRequest(failing.gh, req(), (s, st) => steps.push(`${s} ${st}`))).rejects.toThrow();
+    expect(steps.at(-1)).toBe('commit failed');
+
+    const noLabel = fakeWriter({ labelForbidden: true });
+    const steps2: string[] = [];
+    await openPullRequest(noLabel.gh, req(), (s, st) => steps2.push(`${s} ${st}`));
+    expect(steps2.at(-1)).toBe('label warning');
+  });
+});

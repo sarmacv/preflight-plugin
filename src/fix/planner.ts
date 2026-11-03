@@ -5,7 +5,7 @@ import { contextFiles } from '../engine/engine';
 import type { CheckResult, Skill } from '../skills/types';
 import type { SonarLink } from '../sonar/access';
 import { isTestPath } from '../sonar/client';
-import { estimateTestCoverage, filesNeeded } from '../skills/rules/technology';
+import { estimateTestCoverage, filesNeeded, testsRecognised } from '../skills/rules/technology';
 import { checkOrCategory, renderBranchName, type PrKind } from './branchName';
 import { BUILTIN_FIXES } from './builtinFixes';
 
@@ -51,6 +51,38 @@ export interface RepoPlan {
   problems: PlanProblem[];
 }
 
+export type FixTaskStatus = 'queued' | 'running' | 'done' | 'failed' | 'skipped';
+
+/** One unit of fix work shown on the progress screen: a check to fix, or a source file to write tests for. */
+export interface FixTask {
+  id: string;
+  section: 'fixes' | 'coverage';
+  label: string;
+  status: FixTaskStatus;
+  /** Why it failed or was skipped. */
+  detail?: string;
+  /** Files produced. */
+  files?: string[];
+  /** Picked to replace a file that failed. */
+  replacement?: boolean;
+}
+
+export interface CoverageProgress {
+  source: 'estimate' | 'sonar';
+  /** Percentage before any new tests. */
+  before: number;
+  target: number;
+  /** Source files that need tests in this PR. */
+  goal: number;
+  /** For estimates: all application source files, and how many already had tests. */
+  total?: number;
+  tested?: number;
+}
+
+export type FixEvent =
+  | { kind: 'repo'; repo: string; base: string; tasks: FixTask[]; coverage?: CoverageProgress }
+  | { kind: 'task'; repo: string; task: FixTask };
+
 export interface PlanOptions {
   ctx: RepoContext;
   skills: Skill[];
@@ -64,7 +96,8 @@ export interface PlanOptions {
   coverageThreshold?: number;
   sonarUrl?: string;
   user: string;
-  onProgress?: (label: string) => void;
+  /** Structured progress for the "Preparing fixes" screen. */
+  onEvent?: (event: FixEvent) => void;
 }
 
 const BUILD_FILES = ['package.json', 'pom.xml', 'build.gradle', 'build.gradle.kts', 'pyproject.toml', 'setup.cfg', 'go.mod', 'Cargo.toml', 'jest.config.js', 'jest.config.ts', 'vitest.config.ts', 'pytest.ini', 'tsconfig.json'];
@@ -145,30 +178,60 @@ export async function planRepoFixes(opts: PlanOptions): Promise<RepoPlan> {
   const makePr = (kind: PrKind): PlanPr => ({ id: `${ctx.fullName}#${kind}`, kind, branch: '', base, draft: kind === 'coverage', checks: [], files: [], notes: [] });
   const fixes = makePr('fixes');
   const coverage = makePr('coverage');
+  const report = (task: FixTask) => opts.onEvent?.({ kind: 'task', repo: ctx.fullName, task });
 
-  for (const result of failed.filter((r) => r.fixPr === 'fixes')) {
+  // Work out the whole job first, so the progress screen can list every task from the start.
+  const fixResults = failed.filter((r) => r.fixPr === 'fixes');
+  const coverageResult = failed.find((r) => r.fixPr === 'coverage');
+  let goal: CoverageGoal | undefined;
+  let goalError: string | undefined;
+  if (coverageResult) {
+    try {
+      if (!opts.provider) throw new Error("AI isn't available for this fix right now");
+      goal = await coverageTargets(opts);
+    } catch (err) {
+      if (ctx.signal?.aborted) throw err;
+      goalError = (err as Error).message;
+    }
+  }
+  const fixTask = (r: CheckResult): FixTask => ({ id: r.checkId, section: 'fixes', label: byId.get(r.checkId)!.name, status: 'queued' });
+  opts.onEvent?.({
+    kind: 'repo',
+    repo: ctx.fullName,
+    base,
+    tasks: [
+      ...fixResults.map(fixTask),
+      ...(goal ? goal.candidates.slice(0, goal.goal).map((c): FixTask => ({ id: c.path, section: 'coverage', label: c.path, status: 'queued' })) : []),
+    ],
+    coverage: goal?.progress,
+  });
+
+  for (const result of fixResults) {
     const skill = byId.get(result.checkId)!;
-    opts.onProgress?.(`${ctx.fullName}: ${skill.name}`);
+    report({ ...fixTask(result), status: 'running' });
     try {
       const proposal = await proposalFor(skill, result, opts);
       const added = await addChanges(fixes, proposal.changes, skill.id, proposal.editable ?? [], ctx);
       if (added === 0) {
         problems.push({ checkId: skill.id, name: skill.name, reason: 'No file changes were needed' });
+        report({ ...fixTask(result), status: 'skipped', detail: 'No file changes were needed' });
         continue;
       }
       fixes.checks.push({ id: skill.id, name: skill.name, category: skill.category, severity: skill.severity });
       if (proposal.notes) fixes.notes.push(proposal.notes);
+      report({ ...fixTask(result), status: 'done', files: fixes.files.filter((f) => f.checkIds.includes(skill.id)).map((f) => f.path) });
     } catch (err) {
       if (ctx.signal?.aborted) throw err;
       problems.push({ checkId: skill.id, name: skill.name, reason: (err as Error).message });
+      report({ ...fixTask(result), status: 'failed', detail: (err as Error).message });
     }
   }
 
-  const coverageResult = failed.find((r) => r.fixPr === 'coverage');
   if (coverageResult) {
     const skill = byId.get(coverageResult.checkId)!;
     try {
-      await planCoverage(skill, coverage, opts);
+      if (!goal) throw new Error(goalError ?? 'Nothing to do');
+      await planCoverage(skill, coverage, goal, opts, report);
       if (coverage.files.length) coverage.checks.push({ id: skill.id, name: skill.name, category: skill.category, severity: skill.severity });
       else problems.push({ checkId: skill.id, name: skill.name, reason: 'No tests were generated' });
     } catch (err) {
@@ -230,13 +293,13 @@ interface CoverageGoal {
   candidates: CoverageTarget[];
   origin: string;
   dropped: string[];
+  progress: CoverageProgress;
 }
 
 async function coverageTargets(opts: PlanOptions): Promise<CoverageGoal> {
   const { ctx } = opts;
   const dropped: string[] = [];
   if (opts.sonar) {
-    opts.onProgress?.(`${ctx.fullName}: finding lowest-coverage files`);
     // No project or no analysis yet: fall through to the untested-files heuristic.
     const lowest = await opts.sonar.lowestCoverage(ctx, opts.coverageMaxFiles > 0 ? opts.coverageMaxFiles : 50).catch(() => undefined);
     if (lowest && lowest.files.length) {
@@ -246,7 +309,19 @@ async function coverageTargets(opts: PlanOptions): Promise<CoverageGoal> {
         if (path) targets.push({ path, reason: `Sonar reports ${f.coverage}% line coverage with ${f.uncoveredLines} uncovered lines` });
         else dropped.push(`${f.path} (not found in the repository)`);
       }
-      if (targets.length) return { goal: targets.length, candidates: targets, origin: `the lowest-coverage files in Sonar project \`${lowest.projectKey}\``, dropped };
+      if (targets.length) {
+        // The current figure is only for the progress screen; never let it block the PR.
+        const measured = await Promise.resolve()
+          .then(() => opts.sonar!.coverage(ctx))
+          .catch(() => undefined);
+        return {
+          goal: targets.length,
+          candidates: targets,
+          origin: `the lowest-coverage files in Sonar project \`${lowest.projectKey}\``,
+          dropped,
+          progress: { source: 'sonar', before: Math.round(measured?.coverage ?? 0), target: opts.coverageThreshold ?? 80, goal: targets.length },
+        };
+      }
     }
   }
   // Estimated from the code: write tests for just enough untested files to reach the threshold,
@@ -259,7 +334,19 @@ async function coverageTargets(opts: PlanOptions): Promise<CoverageGoal> {
   const candidates = untestedSourceFiles(ctx, Number.MAX_SAFE_INTEGER).map((path) => ({ path, reason: 'This file has no tests yet' }));
   if (candidates.length === 0) throw new Error('Every source file already has tests');
   if (goal < needed) dropped.push(`only ${goal} of the ${needed} files needed for ${threshold}% (limit preflight.coverage.maxFiles = ${opts.coverageMaxFiles})`);
-  return { goal, candidates, origin: `the largest source files without tests (${needed} needed to reach ${threshold}%)`, dropped };
+  return {
+    goal,
+    candidates,
+    origin: `the largest source files without tests (${needed} needed to reach ${threshold}%)`,
+    dropped,
+    progress: { source: 'estimate', before: est.percent, target: threshold, goal, total: est.tested.length + est.untested.length, tested: est.tested.length },
+  };
+}
+
+/** A test path next to the source that the estimate recognises (keeps the folder, which generic names like index need). */
+export function expectedTestPath(source: string): string {
+  const dir = source.slice(0, source.lastIndexOf('/') + 1);
+  return `${dir}${expectedTestName(source)}`;
 }
 
 /** The test file name the estimate recognises for a source file, in the repo's language conventions. */
@@ -283,15 +370,15 @@ export function expectedTestName(source: string): string {
 /** Files the AI is asked about at the same time. */
 const COVERAGE_CONCURRENCY = 3;
 
-async function planCoverage(skill: Skill, pr: PlanPr, opts: PlanOptions): Promise<void> {
+async function planCoverage(skill: Skill, pr: PlanPr, plan: CoverageGoal, opts: PlanOptions, report: (t: FixTask) => void): Promise<void> {
   const { ctx } = opts;
   const provider = opts.provider;
   if (!provider) throw new Error("AI isn't available for this fix right now");
-  const { goal, candidates, origin, dropped } = await coverageTargets(opts);
+  const { goal, candidates, origin, dropped } = plan;
   const buildFiles = BUILD_FILES.map((p) => ctx.exists(p)).filter((p): p is string => !!p).slice(0, 3);
 
-  /** Returns true when at least one test file was added for this source. */
-  const writeTestsFor = async ({ path: source, reason }: CoverageTarget): Promise<boolean> => {
+  /** Returns the test files added for this source (empty when none). */
+  const writeTestsFor = async ({ path: source, reason }: CoverageTarget): Promise<string[]> => {
     const files: { path: string; content: string }[] = [];
     for (const p of [source, ...nearbyTests(ctx, source), ...buildFiles]) {
       const content = await ctx.read(p);
@@ -300,7 +387,7 @@ async function planCoverage(skill: Skill, pr: PlanPr, opts: PlanOptions): Promis
     const instructions = [
       `Write unit tests for ${source}. ${reason}.`,
       'Use the same test framework, assertion style and location as the existing tests shown. If there are none, use the conventional framework for this stack declared in the build file.',
-      `Name the test file after the source file, e.g. ${expectedTestName(source)} (or the equivalent this repository already uses), so it is clear which file it tests.`,
+      `Name the test file after the source file so it is clear which file it tests: put it at ${expectedTestPath(source)}, or if this repository keeps tests in a separate folder, mirror the source folders there with the same file name (e.g. tests/${expectedTestPath(source).split('/').slice(-2).join('/')}).`,
       'Cover the public behaviour and the branches that are currently untested. Mock external I/O.',
       'Only create or modify test files. Do not change production code or build files.',
     ].join('\n');
@@ -308,45 +395,63 @@ async function planCoverage(skill: Skill, pr: PlanPr, opts: PlanOptions): Promis
     const tests = proposal.changes.filter((c) => isTestPath(c.path) && c.content !== undefined);
     for (const c of proposal.changes.filter((c) => !tests.includes(c))) dropped.push(`${c.path} (not a test file, dropped)`);
     if (proposal.notes) pr.notes.push(proposal.notes);
-    return (await addChanges(pr, tests, skill.id, [], ctx)) > 0;
+    const existing = new Set(pr.files.map((f) => f.path));
+    await addChanges(pr, tests, skill.id, [], ctx);
+    return pr.files.map((f) => f.path).filter((p) => !existing.has(p));
   };
 
   // One file failing never stops the batch: keep going, and take the next untested file instead.
   const targets: string[] = [];
   const failed: string[] = [];
+  const unrecognised: string[] = [];
   let next = 0;
   let inFlight = 0;
   const worker = async () => {
     while (targets.length + inFlight < goal && next < candidates.length) {
       if (ctx.signal?.aborted) return;
-      const candidate = candidates[next++];
+      const index = next++;
+      const candidate = candidates[index];
       inFlight++;
-      opts.onProgress?.(`${ctx.fullName}: writing tests ${Math.min(targets.length + inFlight, goal)} of ${goal}: ${candidate.path}`);
+      const task: FixTask = { id: candidate.path, section: 'coverage', label: candidate.path, status: 'running', replacement: index >= goal };
+      report(task);
       try {
-        if (await writeTestsFor(candidate)) targets.push(candidate.path);
-        else failed.push(`${candidate.path} (no test file produced)`);
+        const written = await writeTestsFor(candidate);
+        // Only count a file once the estimate itself recognises its test; otherwise the PR could
+        // look finished and still leave the next scan below the threshold.
+        if (written.length && testsRecognised(candidate.path, written, isTestPath)) {
+          targets.push(candidate.path);
+          report({ ...task, status: 'done', files: written });
+        } else if (written.length) {
+          unrecognised.push(`${candidate.path} (test written as ${written.join(', ')})`);
+          report({ ...task, status: 'skipped', files: written, detail: "Test isn't named after this file, so it won't count; trying another file" });
+        } else {
+          failed.push(`${candidate.path} (no test file produced)`);
+          report({ ...task, status: 'failed', detail: 'No test file produced' });
+        }
       } catch (err) {
         if (ctx.signal?.aborted) throw err;
         failed.push(`${candidate.path} (${(err as Error).message})`);
+        report({ ...task, status: 'failed', detail: (err as Error).message });
       } finally {
         inFlight--;
       }
     }
   };
   await Promise.all(Array.from({ length: Math.min(COVERAGE_CONCURRENCY, goal) }, worker));
-  if (targets.length === 0) throw new Error(`Couldn't generate tests: ${failed.join('; ') || 'no candidate files'}`);
+  if (pr.files.length === 0) throw new Error(`Couldn't generate tests: ${failed.join('; ') || 'no candidate files'}`);
 
   // Re-run the estimate with the new tests included, so the PR says whether it reaches the threshold.
   const threshold = opts.coverageThreshold ?? 80;
   const allPaths = ctx.files.map((f) => f.path);
   const before = estimateTestCoverage(allPaths, isTestPath);
   const after = estimateTestCoverage([...allPaths, ...pr.files.map((f) => f.path)], isTestPath);
-  const unmatched = targets.filter((t) => !after.tested.includes(t));
   pr.notes.unshift(
-    `- Targets ${origin}: ${targets.join(', ')}.`,
+    `- Targets ${origin}: ${targets.join(', ') || 'none recognised yet'}.`,
     `- Estimated coverage: ${before.percent}% → ${after.percent}% (threshold ${threshold}%)${after.percent >= threshold ? '' : '. Still below the threshold; see below'}.`,
   );
   if (failed.length) pr.notes.push(`- Couldn't write tests for: ${failed.join('; ')}${targets.length >= goal ? ' (other untested files were used instead)' : ''}.`);
-  if (unmatched.length) pr.notes.push(`- Tests for ${unmatched.join(', ')} aren't named after their source file, so Preflight's estimate won't count them yet.`);
+  if (unrecognised.length) {
+    pr.notes.push(`- Kept, but not counted towards the estimate because they aren't named after their source file: ${unrecognised.join('; ')}.`);
+  }
   if (dropped.length) pr.notes.push(`- Skipped: ${dropped.join('; ')}.`);
 }

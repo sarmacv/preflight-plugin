@@ -216,7 +216,7 @@ describe('coverage PR reaches the threshold', () => {
   it('flags tests that are not named after their source file', async () => {
     const odd: ModelProvider = { ...provider, generateFix: async () => ({ changes: [{ path: 'test/misc.test.ts', content: 'test()' }] }) };
     const plan = await planRepoFixes({ ctx: repo(1, 0), skills: [coverageSkill], results: [fail(coverageSkill)], provider: odd, branchTemplate: '{type}', coverageMaxFiles: 50, coverageThreshold: 80, user: 'me' });
-    expect(plan.prs[0].notes.join('\n')).toMatch(/Tests for src\/m0\.ts aren't named after their source file/);
+    expect(plan.prs[0].notes.join('\n')).toMatch(/not counted towards the estimate because they aren't named after their source file: src\/m0\.ts \(test written as test\/misc\.test\.ts\)/);
   });
 
   it('suggests test names in each language convention', async () => {
@@ -259,5 +259,44 @@ describe('coverage PR keeps going when a file fails', () => {
     expect(plan.prs).toEqual([]);
     expect(plan.problems[0].reason).toMatch(/^Couldn't generate tests: src\/m1\.ts/);
     expect(plan.problems[0].reason).not.toMatch(/re-run/i);
+  });
+});
+
+describe('coverage PR only counts tests the estimate recognises', () => {
+  it('replaces a file whose test is not recognised, so the threshold is really reached', async () => {
+    // 5 untested files; 4 needed. The AI names m4's test badly, so Preflight moves on to m0.
+    const files = Object.fromEntries(Array.from({ length: 5 }, (_, i) => [`src/m${i}.ts`, 'x'.repeat(100 + i)]));
+    const badName: ModelProvider = {
+      ...provider,
+      generateFix: async (_s, ctx) => {
+        const src = ctx.files[0].path;
+        return { changes: [{ path: src === 'src/m4.ts' ? 'test/helpers.test.ts' : src.replace(/\.ts$/, '.test.ts'), content: 'test()' }] };
+      },
+    };
+    const events: string[] = [];
+    const plan = await planRepoFixes({
+      ctx: fakeRepo(files), skills: [coverageSkill], results: [fail(coverageSkill)], provider: badName, branchTemplate: '{type}', coverageMaxFiles: 0, coverageThreshold: 80, user: 'me',
+      onEvent: (e) => events.push(e.kind === 'repo' ? `repo ${e.tasks.length} ${e.coverage?.before}%->${e.coverage?.target}%` : `${e.task.label} ${e.task.status}${e.task.replacement ? ' (replacement)' : ''}`),
+    });
+    expect(plan.prs[0].notes[1]).toBe('- Estimated coverage: 0% → 80% (threshold 80%).');
+    expect(events[0]).toBe('repo 4 0%->80%');
+    expect(events).toContain('src/m4.ts skipped');
+    expect(events).toContain('src/m0.ts done (replacement)');
+    expect(events.find((e) => e.startsWith('src/m0.ts running'))).toBe('src/m0.ts running (replacement)');
+  });
+});
+
+describe('progress events', () => {
+  it('lists every task up front, then reports each fix check', async () => {
+    const events: { kind: string; label?: string; status?: string; files?: string[] }[] = [];
+    await planRepoFixes({
+      ctx: fakeRepo({ 'README.md': '# Api' }), skills: [templateSkill], results: [fail(templateSkill)], branchTemplate: '', coverageMaxFiles: 0, user: 'me',
+      onEvent: (e) => events.push(e.kind === 'repo' ? { kind: 'repo', label: e.tasks.map((t) => `${t.section}:${t.label}`).join(',') } : { kind: 'task', label: e.task.label, status: e.task.status, files: e.task.files }),
+    });
+    expect(events).toEqual([
+      { kind: 'repo', label: 'fixes:Sonar' },
+      { kind: 'task', label: 'Sonar', status: 'running', files: undefined },
+      { kind: 'task', label: 'Sonar', status: 'done', files: ['sonar-project.properties'] },
+    ]);
   });
 });

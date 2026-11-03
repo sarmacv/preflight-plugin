@@ -164,3 +164,24 @@ describe('sonar_coverage estimate', () => {
     expect(o.evidence[1].message).toMatch(/^7 more source files need tests to reach 80%/);
   });
 });
+
+describe('generic file names', () => {
+  const isTest = (p: string) => /(^|\/)(tests?|__tests__)\/|\.(test|spec)\./.test(p);
+  it('matches index files by their folder, never by any index test', async () => {
+    const { estimateTestCoverage } = await import('../src/skills/rules/technology');
+    const est = estimateTestCoverage(
+      ['src/core/index.ts', 'src/api/index.ts', 'src/ui/index.ts', 'index.ts', 'test/core/index.test.ts', 'test/api.test.ts', 'test/other/index.test.ts', 'test/index.test.ts'],
+      isTest,
+    );
+    expect(est.tested.sort()).toEqual(['index.ts', 'src/api/index.ts', 'src/core/index.ts']);
+    expect(est.untested).toEqual(['src/ui/index.ts']);
+  });
+
+  it('suggests a test path the estimate will recognise', async () => {
+    const { expectedTestPath } = await import('../src/fix/planner');
+    const { testsRecognised } = await import('../src/skills/rules/technology');
+    for (const src of ['src/core/index.ts', 'app/models/user.py', 'pkg/store/store.go', 'src/main/java/com/acme/Foo.java']) {
+      expect(testsRecognised(src, [expectedTestPath(src)], (p) => /\.test\.|^test_|\/test_|_test\.|Test\.java$/.test(p)), src).toBe(true);
+    }
+  });
+});

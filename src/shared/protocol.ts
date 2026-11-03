@@ -2,10 +2,22 @@
 import type { ProviderId } from '../ai/detect';
 import type { RepoScore } from '../engine/score';
 import type { CheckResult, Severity } from '../skills/types';
-import type { PlanFile, PlanPr, PlanProblem, RepoPlan } from '../fix/planner';
+import type { CoverageProgress, FixEvent, FixTask, PlanFile, PlanPr, PlanProblem, RepoPlan } from '../fix/planner';
+import type { PrStep, PrStepStatus } from '../fix/prWriter';
 import type { PrKind } from '../fix/branchName';
 
-export type { CheckResult, PlanFile, PlanPr, PlanProblem, PrKind, ProviderId, RepoPlan, RepoScore, Severity };
+export type { CheckResult, CoverageProgress, FixEvent, FixTask, PlanFile, PlanPr, PlanProblem, PrKind, PrStep, PrStepStatus, ProviderId, RepoPlan, RepoScore, Severity };
+
+/** A PR about to be opened, as listed on the "Opening pull requests" screen. */
+export interface PrPending {
+  id: string;
+  repo: string;
+  kind: PrKind;
+  branch: string;
+  base: string;
+  files: number;
+  draft: boolean;
+}
 
 /** A PR the user approved in the preview, with any edits they made. */
 export interface PrSubmission {
@@ -102,10 +114,11 @@ export type HostMessage =
   | { type: 'repoFailed'; repo: string; error: UiError }
   | { type: 'scanFinished'; cancelled: boolean }
   | { type: 'scanError'; error: UiError }
-  | { type: 'fixProgress'; label: string }
+  | { type: 'fixEvent'; event: FixEvent }
   | { type: 'fixPlan'; repos: RepoPlan[]; branchPattern: string }
   | { type: 'fixError'; error: UiError }
-  | { type: 'prCreating'; total: number }
+  | { type: 'prCreating'; prs: PrPending[] }
+  | { type: 'prStep'; id: string; step: PrStep; status: PrStepStatus; detail?: string }
   | { type: 'prResults'; results: PrResult[] }
   /** The confirmation dialog was dismissed; return to the preview. */
   | { type: 'prCancelled' };

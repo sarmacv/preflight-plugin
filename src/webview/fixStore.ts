@@ -1,5 +1,7 @@
 import { computed, signal } from '@preact/signals';
-import type { HostMessage, PrResult, PrSubmission, RepoPlan, UiError } from '../shared/protocol';
+import type {
+  CoverageProgress, FixTask, HostMessage, PrPending, PrResult, PrStep, PrStepStatus, PrSubmission, RepoPlan, UiError,
+} from '../shared/protocol';
 import { validateBranchName } from '../fix/branchName';
 import { canScan, provider, runs, scanning } from './store';
 import { post } from './vscode';
@@ -13,13 +15,27 @@ export interface PrEdit {
 }
 
 export const fixPhase = signal<FixPhase>('idle');
-export const fixLabel = signal('');
+/** Live state of the "Preparing fixes" screen, per repo, in the order repos start. */
+export interface RepoFixProgress {
+  repo: string;
+  base: string;
+  tasks: FixTask[];
+  coverage?: CoverageProgress;
+}
+export const fixProgress = signal<RepoFixProgress[]>([]);
+/** When the current preparing or PR-opening phase started, for the elapsed timer. */
+export const phaseStartedAt = signal(0);
+
+/** Live state of the "Opening pull requests" screen. */
+export interface PrProgress extends PrPending {
+  steps: Partial<Record<PrStep, { status: PrStepStatus; detail?: string }>>;
+}
+export const prProgress = signal<PrProgress[]>([]);
 export const fixError = signal<UiError | undefined>(undefined);
 export const fixRepos = signal<RepoPlan[]>([]);
 export const branchPattern = signal('');
 export const prEdits = signal<Record<string, PrEdit>>({});
 export const prResults = signal<PrResult[]>([]);
-export const prTotal = signal(0);
 
 export const hasFixable = computed(() =>
   runs.value.some((r) => r.status === 'done' && Object.values(r.results).some((x) => x.status === 'fail' && x.fixable)),
@@ -64,7 +80,8 @@ export const primaryAction = computed<'createPrs' | 'fix' | 'scan' | undefined>(
 export function prepareFixes(repos?: string[]): void {
   if (!canFix.value) return;
   fixPhase.value = 'preparing';
-  fixLabel.value = '';
+  fixProgress.value = [];
+  phaseStartedAt.value = Date.now();
   fixError.value = undefined;
   prResults.value = [];
   post({ type: 'prepareFixes', provider: provider.value, repos });
@@ -93,9 +110,21 @@ export function updateEdit(id: string, fn: (e: PrEdit) => PrEdit): void {
 
 export function handleFixMessage(m: HostMessage): boolean {
   switch (m.type) {
-    case 'fixProgress':
-      fixLabel.value = m.label;
+    case 'fixEvent': {
+      const e = m.event;
+      if (e.kind === 'repo') {
+        fixProgress.value = [...fixProgress.value.filter((r) => r.repo !== e.repo), { repo: e.repo, base: e.base, tasks: e.tasks, coverage: e.coverage }];
+        return true;
+      }
+      fixProgress.value = fixProgress.value.map((r) => {
+        if (r.repo !== e.repo) return r;
+        const key = (t: FixTask) => `${t.section}:${t.id}`;
+        const exists = r.tasks.some((t) => key(t) === key(e.task));
+        // Replacement files aren't in the initial list; they're appended when they start.
+        return { ...r, tasks: exists ? r.tasks.map((t) => (key(t) === key(e.task) ? e.task : t)) : [...r.tasks, e.task] };
+      });
       return true;
+    }
     case 'fixPlan': {
       fixRepos.value = m.repos;
       branchPattern.value = m.branchPattern;
@@ -114,8 +143,12 @@ export function handleFixMessage(m: HostMessage): boolean {
       fixPhase.value = fixRepos.value.length ? 'review' : 'error';
       return true;
     case 'prCreating':
-      prTotal.value = m.total;
+      prProgress.value = m.prs.map((p) => ({ ...p, steps: {} }));
+      phaseStartedAt.value = Date.now();
       fixPhase.value = 'creating';
+      return true;
+    case 'prStep':
+      prProgress.value = prProgress.value.map((p) => (p.id === m.id ? { ...p, steps: { ...p.steps, [m.step]: { status: m.status, detail: m.detail } } } : p));
       return true;
     case 'prResults':
       prResults.value = m.results;

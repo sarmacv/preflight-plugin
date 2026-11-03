@@ -39,52 +39,75 @@ export async function branchExists(gh: GitHub, owner: string, repo: string, bran
   }
 }
 
-export async function openPullRequest(gh: GitHub, req: PrRequest): Promise<PrOutcome> {
+export type PrStep = 'branch' | 'commit' | 'pr' | 'label';
+export type PrStepStatus = 'running' | 'done' | 'failed' | 'warning';
+/** Called as each step of opening a PR starts and ends, for the "Opening PRs" screen. */
+export type PrStepListener = (step: PrStep, status: PrStepStatus, detail?: string) => void;
+
+export async function openPullRequest(gh: GitHub, req: PrRequest, onStep: PrStepListener = () => {}): Promise<PrOutcome> {
   const { owner, repo } = req;
   if (req.changes.length === 0) throw new Error('Nothing to commit');
-
-  const { data: baseRef } = await gh.rest.git.getRef({ owner, repo, ref: `heads/${req.base}` });
-  const baseSha = baseRef.object.sha;
-
-  // Never commit to the scanned or default branch: always a brand-new branch.
-  const branch = await resolveCollision(req.branch, (b) => branchExists(gh, owner, repo, b));
-  if (branch === req.base) throw new Error('Refusing to commit to the scanned branch');
-  await gh.rest.git.createRef({ owner, repo, ref: `refs/heads/${branch}`, sha: baseSha });
+  let current: PrStep = 'branch';
+  const begin = (step: PrStep) => {
+    current = step;
+    onStep(step, 'running');
+  };
 
   try {
-    // createCommitOnBranch produces a commit signed by GitHub, which satisfies "require signed commits" rules.
-    await gh.graphql(
-      `mutation($input: CreateCommitOnBranchInput!) { createCommitOnBranch(input: $input) { commit { oid } } }`,
-      {
-        input: {
-          branch: { repositoryNameWithOwner: `${owner}/${repo}`, branchName: branch },
-          expectedHeadOid: baseSha,
-          message: { headline: req.text.commitHeadline, body: req.text.commitBody },
-          fileChanges: {
-            additions: req.changes.filter((c) => c.content !== undefined).map((c) => ({ path: c.path, contents: toBase64(c.content!) })),
-            deletions: req.changes.filter((c) => c.content === undefined).map((c) => ({ path: c.path })),
+    begin('branch');
+    const { data: baseRef } = await gh.rest.git.getRef({ owner, repo, ref: `heads/${req.base}` });
+    const baseSha = baseRef.object.sha;
+
+    // Never commit to the scanned or default branch: always a brand-new branch.
+    const branch = await resolveCollision(req.branch, (b) => branchExists(gh, owner, repo, b));
+    if (branch === req.base) throw new Error('Refusing to commit to the scanned branch');
+    await gh.rest.git.createRef({ owner, repo, ref: `refs/heads/${branch}`, sha: baseSha });
+    onStep('branch', 'done', branch);
+
+    begin('commit');
+    try {
+      // createCommitOnBranch produces a commit signed by GitHub, which satisfies "require signed commits" rules.
+      await gh.graphql(
+        `mutation($input: CreateCommitOnBranchInput!) { createCommitOnBranch(input: $input) { commit { oid } } }`,
+        {
+          input: {
+            branch: { repositoryNameWithOwner: `${owner}/${repo}`, branchName: branch },
+            expectedHeadOid: baseSha,
+            message: { headline: req.text.commitHeadline, body: req.text.commitBody },
+            fileChanges: {
+              additions: req.changes.filter((c) => c.content !== undefined).map((c) => ({ path: c.path, contents: toBase64(c.content!) })),
+              deletions: req.changes.filter((c) => c.content === undefined).map((c) => ({ path: c.path })),
+            },
           },
         },
-      },
-    );
+      );
+    } catch (err) {
+      await gh.rest.git.deleteRef({ owner, repo, ref: `heads/${branch}` }).catch(() => undefined);
+      throw err;
+    }
+    onStep('commit', 'done', `${req.changes.length} file${req.changes.length === 1 ? '' : 's'}`);
+
+    begin('pr');
+    let draftFallback = false;
+    let pr: { html_url: string; number: number };
+    try {
+      pr = (await gh.rest.pulls.create({ owner, repo, head: branch, base: req.base, title: req.text.title, body: req.text.body, draft: req.draft })).data;
+    } catch (err) {
+      const message = (err as Error).message ?? '';
+      if (!(req.draft && status(err) === 422 && /draft/i.test(message))) throw err;
+      draftFallback = true;
+      pr = (await gh.rest.pulls.create({ owner, repo, head: branch, base: req.base, title: `[Draft] ${req.text.title}`, body: req.text.body })).data;
+    }
+    onStep('pr', 'done', `#${pr.number}${draftFallback ? ' (drafts unavailable, titled [Draft])' : req.draft ? ' (draft)' : ''}`);
+
+    begin('label');
+    const label = await applyLabel(gh, owner, repo, pr.number);
+    onStep('label', label.labelApplied ? 'done' : 'warning', label.labelApplied ? PR_LABEL.name : label.labelWarning);
+    return { url: pr.html_url, number: pr.number, branch, draftFallback, ...label };
   } catch (err) {
-    await gh.rest.git.deleteRef({ owner, repo, ref: `heads/${branch}` }).catch(() => undefined);
+    onStep(current, 'failed', (err as Error).message);
     throw err;
   }
-
-  let draftFallback = false;
-  let pr: { html_url: string; number: number };
-  try {
-    pr = (await gh.rest.pulls.create({ owner, repo, head: branch, base: req.base, title: req.text.title, body: req.text.body, draft: req.draft })).data;
-  } catch (err) {
-    const message = (err as Error).message ?? '';
-    if (!(req.draft && status(err) === 422 && /draft/i.test(message))) throw err;
-    draftFallback = true;
-    pr = (await gh.rest.pulls.create({ owner, repo, head: branch, base: req.base, title: `[Draft] ${req.text.title}`, body: req.text.body })).data;
-  }
-
-  const label = await applyLabel(gh, owner, repo, pr.number);
-  return { url: pr.html_url, number: pr.number, branch, draftFallback, ...label };
 }
 
 async function applyLabel(gh: GitHub, owner: string, repo: string, issue: number): Promise<{ labelApplied: boolean; labelWarning?: string }> {

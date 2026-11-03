@@ -2,24 +2,18 @@ import { useMemo, useState } from 'preact/hooks';
 import type { PlanFile, PlanPr, RepoPlan } from '../../shared/protocol';
 import { diffLines, hunks } from '../../shared/diff';
 import {
-  branchProblem, canCreate, closeFixes, createPrs, fixError, fixLabel, fixPhase, fixRepos, prEdits, prResults, prTotal, submissions, updateEdit,
+  branchProblem, canCreate, closeFixes, createPrs, fixError, fixPhase, fixRepos, prEdits, prResults, submissions, updateEdit,
 } from '../fixStore';
 import { post } from '../vscode';
 import { Empty, Icon, IconButton } from './Icon';
+import { FixProgressView, PrProgressView } from './FixProgress';
 
 const MAX_NEW_LINES = 300;
 
 export function FixView() {
   const phase = fixPhase.value;
 
-  if (phase === 'preparing') {
-    return (
-      <div class="fix-shell">
-        <Toolbar />
-        <Empty icon="loading" spin label={fixLabel.value || 'Preparing fixes'} action={{ label: 'Cancel', onClick: closeFixes }} />
-      </div>
-    );
-  }
+  if (phase === 'preparing') return <FixProgressView />;
   if (phase === 'error') {
     return (
       <div class="fix-shell">
@@ -28,14 +22,7 @@ export function FixView() {
       </div>
     );
   }
-  if (phase === 'creating') {
-    return (
-      <div class="fix-shell">
-        <Toolbar />
-        <Empty icon="loading" spin label={`Opening ${prTotal.value} PR${prTotal.value === 1 ? '' : 's'}`} />
-      </div>
-    );
-  }
+  if (phase === 'creating') return <PrProgressView />;
   if (phase === 'done') return <Done />;
 
   const repos = fixRepos.value;

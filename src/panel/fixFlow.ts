@@ -56,7 +56,6 @@ export class FixFlow {
         if (abort.signal.aborted) return;
         const results = [...run.results.values()];
         if (!results.some((r) => r.status === 'fail' && r.fixable)) continue;
-        this.deps.post({ type: 'fixProgress', label: repo });
         // Fresh signal for this flow; the scan's signal is long finished.
         const ctx = run.ctx.withSignal(abort.signal);
         const plan = await planRepoFixes({
@@ -70,7 +69,7 @@ export class FixFlow {
           coverageThreshold: settings.coverageThreshold,
           sonarUrl: settings.sonarUrl,
           user: this.deps.user(),
-          onProgress: (label) => this.deps.post({ type: 'fixProgress', label }),
+          onEvent: (event) => this.deps.post({ type: 'fixEvent', event }),
         });
         repos.push(plan);
         for (const pr of plan.prs) this.plans.set(pr.id, { pr, repo: plan });
@@ -122,7 +121,10 @@ export class FixFlow {
     }
 
     this.abort = new AbortController();
-    this.deps.post({ type: 'prCreating', total: n });
+    this.deps.post({
+      type: 'prCreating',
+      prs: approved.map(({ sub, pr }) => ({ id: sub.id, repo: sub.repo, kind: sub.kind, branch: sub.branch, base: pr.base, files: sub.files.length, draft: pr.draft })),
+    });
     const results: PrResult[] = [];
     try {
       for (const { sub, pr } of approved) {
@@ -138,7 +140,7 @@ export class FixFlow {
             changes: sub.files.map((f) => ({ path: f.path, content: f.content ?? undefined })),
             text,
             draft: pr.draft,
-          });
+          }, (step, status, detail) => this.deps.post({ type: 'prStep', id: sub.id, step, status, detail }));
           const warnings: string[] = [];
           if (out.branch !== sub.branch) warnings.push(`Branch ${sub.branch} existed; used ${out.branch}`);
           if (out.draftFallback) warnings.push('Draft PRs aren\'t available for this repository, so it was opened as a regular PR titled [Draft]');
