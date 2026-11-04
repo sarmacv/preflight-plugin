@@ -7,6 +7,46 @@ import { unzipSync } from 'fflate';
 import { findSkills, slug, toSkillFile, type ImportFile, type SkillDraft } from '../skills/importer';
 import { titleCase } from '../skills/parser';
 import { SEVERITIES, type Severity, type Skill } from '../skills/types';
+import type { ModelProvider } from '../ai/provider';
+import { aiReview, LIKELY_DUPLICATE, reviewDraft, type DraftReview, type ReviewStatus } from '../skills/importReview';
+
+const STATUS: Record<ReviewStatus, { icon: string; label: string }> = {
+  ready: { icon: '$(pass)', label: 'Ready' },
+  style: { icon: '$(warning)', label: 'Style issues' },
+  duplicate: { icon: '$(copy)', label: 'Likely duplicate' },
+  invalid: { icon: '$(error)', label: "Invalid: can't import" },
+};
+
+/** One line describing a review, for the review list. */
+function reviewDetail(r: DraftReview): string {
+  const parts: string[] = [];
+  const dup = r.duplicates[0];
+  if (dup && dup.score >= LIKELY_DUPLICATE) parts.push(`Duplicate of "${dup.name}" (${dup.reason})`);
+  else if (dup) parts.push(`Similar to "${dup.name}"`);
+  parts.push(...r.issues.map((i) => i.message));
+  if (r.improved) parts.push('AI rewrite into Preflight style available');
+  return parts.join(' · ') || (r.draft.kind === 'preflight' ? 'Preflight check, valid' : 'Agent skill, becomes an AI check');
+}
+
+/** Lets the user see each skill's review and choose what to import; duplicates and invalid skills start unticked. */
+async function pickReviewed(reviews: DraftReview[]): Promise<DraftReview[] | undefined> {
+  const picked = await vscode.window.showQuickPick(
+    reviews.map((r) => ({
+      label: `${STATUS[r.status].icon} ${r.draft.name}`,
+      description: STATUS[r.status].label,
+      detail: reviewDetail(r),
+      picked: r.status === 'ready' || r.status === 'style',
+      review: r,
+    })),
+    { title: 'Import skills: review', placeHolder: 'Preflight checked each skill. Choose the ones to import.', canPickMany: true, ignoreFocusOut: true },
+  );
+  if (!picked) return undefined;
+  const invalid = picked.filter((p) => p.review.status === 'invalid');
+  if (invalid.length) {
+    void vscode.window.showWarningMessage(`Preflight: skipped ${invalid.map((i) => `"${i.review.draft.name}" (${i.review.issues[0]?.message})`).join(', ')}.`);
+  }
+  return picked.filter((p) => p.review.status !== 'invalid').map((p) => p.review);
+}
 
 interface CategoryChoice {
   category: string;
@@ -86,7 +126,14 @@ export interface ImportOutcome {
 }
 
 /** The whole import conversation: file, which skills, category, severity, clashes. Undefined if cancelled. */
-export async function importSkills(root: string, skills: Skill[], log: (m: string) => void): Promise<ImportOutcome | undefined> {
+export interface ImportOptions {
+  /** The provider selected in the top bar, created only if the review needs AI. */
+  provider?: () => Promise<ModelProvider | undefined>;
+  /** A bundled skill file, shown to the AI as the target format. */
+  example?: string;
+}
+
+export async function importSkills(root: string, skills: Skill[], log: (m: string) => void, opts: ImportOptions = {}): Promise<ImportOutcome | undefined> {
   const [uri] =
     (await vscode.window.showOpenDialog({
       title: 'Import skills',
@@ -108,14 +155,82 @@ export async function importSkills(root: string, skills: Skill[], log: (m: strin
     return undefined;
   }
 
-  if (drafts.length > 1) {
-    const picked = await vscode.window.showQuickPick(
-      drafts.map((d) => ({ label: d.name, description: d.kind === 'preflight' ? 'Preflight check' : 'Agent skill → AI check', detail: d.sourcePath, picked: true, draft: d })),
-      { title: 'Import skills', placeHolder: 'Choose the skills to import', canPickMany: true, ignoreFocusOut: true },
+  // Review every skill: format, style and duplicates, then an AI pass where it can help.
+  let reviews = drafts.map((d) => reviewDraft(d, skills));
+  const wantsAi = reviews.some((r) => r.status !== 'invalid' && (r.draft.kind === 'generic' || r.duplicates.length > 0));
+  const provider = wantsAi && opts.provider ? await opts.provider() : undefined;
+  if (provider && opts.example) {
+    reviews = await vscode.window.withProgress(
+      { location: vscode.ProgressLocation.Notification, title: 'Preflight: reviewing skills', cancellable: true },
+      async (progress, token) => {
+        const ac = new AbortController();
+        token.onCancellationRequested(() => ac.abort());
+        const out: DraftReview[] = [];
+        for (const [i, r] of reviews.entries()) {
+          if (ac.signal.aborted) {
+            out.push(r);
+            continue;
+          }
+          progress.report({ message: `${r.draft.name} (${i + 1} of ${reviews.length})`, increment: 100 / reviews.length });
+          out.push(await aiReview(r, skills, provider, opts.example!, ac.signal));
+        }
+        return out;
+      },
     );
-    if (!picked?.length) return undefined;
-    drafts = picked.map((p) => p.draft);
   }
+  for (const r of reviews) log(`Review ${r.draft.name}: ${r.status}; ${reviewDetail(r)}`);
+
+  const chosen = await pickReviewed(reviews);
+  if (!chosen?.length) return undefined;
+
+  // Offer the AI's rewrite into Preflight's five-section style for free-form skills.
+  const improvable = chosen.filter((r) => r.improved);
+  let useImproved = false;
+  if (improvable.length) {
+    const pick = await vscode.window.showQuickPick(
+      [
+        { label: "Use the AI rewrite in Preflight's style", description: 'Recommended', detail: 'Explicit pass and fail criteria; the original stays attached to the check', use: true },
+        { label: 'Import as written', detail: "Wraps the original instructions as they are", use: false },
+      ],
+      { title: `Import skills: ${improvable.length === 1 ? `"${improvable[0].draft.name}"` : `${improvable.length} skills`} can be improved`, ignoreFocusOut: true },
+    );
+    if (!pick) return undefined;
+    useImproved = pick.use;
+  }
+
+  // Likely duplicates the user still ticked: skip, replace an earlier import, or keep both.
+  const replace = new Set<string>();
+  const final: DraftReview[] = [];
+  for (const r of chosen) {
+    const dup = r.duplicates.find((d) => d.score >= LIKELY_DUPLICATE);
+    if (!dup) {
+      final.push(r);
+      continue;
+    }
+    const existing = skills.find((s) => s.id === dup.id);
+    const options = [
+      ...(existing?.origin === 'imported' ? [{ label: `Replace "${dup.name}"`, description: 'Remove the earlier import and use this one', action: 'replace' as const }] : []),
+      { label: 'Import anyway', description: 'Keep both checks', action: 'keep' as const },
+      { label: 'Skip', action: 'skip' as const },
+    ];
+    const pick = await vscode.window.showQuickPick(options, {
+      title: `"${r.draft.name}" looks like a duplicate of ${existing?.origin === 'bundled' ? 'the built-in check' : 'the check'} "${dup.name}"`,
+      placeHolder: dup.reason,
+      ignoreFocusOut: true,
+    });
+    if (!pick) return undefined;
+    if (pick.action === 'skip') continue;
+    if (pick.action === 'replace') replace.add(dup.id);
+    final.push(r);
+  }
+  if (final.length === 0) return { imported: [], problems: [] };
+  for (const id of replace) {
+    const old = skills.find((s) => s.id === id);
+    const dir = old && importedDir(root, old);
+    if (dir) await rm(dir, { recursive: true, force: true });
+  }
+  skills = skills.filter((s) => !replace.has(s.id));
+  drafts = final.map((r) => (useImproved && r.improved ? r.improved : r.draft));
 
   const category = await pickCategory(skills, drafts);
   if (!category) return undefined;

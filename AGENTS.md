@@ -2,7 +2,7 @@
 
 Preflight ("Check. Fix. Ship.") is an internal VS Code extension, written in TypeScript. It scans GitHub repositories through the API, without cloning, against Markdown "skill" checks. It scores each repo and opens fix pull requests after a preview and confirmation. It is distributed as a private VSIX. `README.md` describes the product from a user's point of view; this file is for whoever (human or AI) continues the work.
 
-Current version: see `version` in `package.json` (0.1.12 at the time of writing). Repository: `sarmacv/preflight-plugin`, branch `main`.
+Current version: see `version` in `package.json` (0.1.13 at the time of writing). Repository: `sarmacv/preflight-plugin`, branch `main`.
 
 ## How to work on this project (the owner's preferences)
 
@@ -79,6 +79,7 @@ Conventions:
 - **Layout:** one editor tab. A top bar of icons (connection, AI provider, Scan, Stop, Fix, Refresh, Filter, Settings). A left pane with **Repos | Checks** tabs: Checks chooses which checks a scan runs. Results on the right, and a status strip at the bottom with the version.
 - **Repos:** an **Organizations** multi-select picker (personal account plus orgs, with repo counts); orgs in the avatar menu are clickable. Repos come from the user's listing merged with each org's listing. Archived and disabled repos are not shown, and there is no add-by-name (owner's decision). Orgs whose OAuth App restrictions hide private repos show "Request access" in the org picker and avatar menu only; there is no badge elsewhere.
 - **Checks import:** the **+** icon in the Checks tab imports a `.md` or `.zip` (`src/skills/importer.ts` is pure; `src/panel/skillImport.ts` handles the VS Code dialogs). Imports go to `globalStorageUri/skills/<category>/<id>/SKILL.md` plus resources, and load with `origin: 'imported'`. General agent skills are wrapped as `evaluation: ai` checks with headings demoted two levels; their folder's text files are `skill.resources` and go into prompts as `<skill-resource>` blocks.
+- **Import review** (`src/skills/importReview.ts`, pure): `lintDraft` (format errors and style warnings), `findDuplicates` (same ID, name or rules; same rule target files; term similarity of name and "What this checks"; at or above 0.6 means likely duplicate), and an optional `aiReview` through `ModelProvider.complete` that confirms or rejects duplicates and can rewrite a free-form skill into Preflight's format (keeping `original-SKILL.md`). Statuses are ready, style, duplicate or invalid. Invalid skills can't be imported.
 - **Branch chip:** editable only when more than one repo is selected (owner's spec).
 - **Verdicts:** Passing (no critical or high failures), Failing, or Incomplete (a check couldn't be evaluated). Score is "N/100". Critical failures are pinned to the top.
 - **Fixing:** a per-repo **Fix** button on each card, plus the top-bar Fix for all repos. A wand marks fixable failures.

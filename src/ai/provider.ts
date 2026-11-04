@@ -34,6 +34,8 @@ export interface ModelProvider {
   readonly label: string;
   evaluate(skill: Skill, ctx: EvaluationContext, signal?: AbortSignal): Promise<Evaluation>;
   generateFix(skill: Skill, ctx: EvaluationContext, signal?: AbortSignal): Promise<FixProposal>;
+  /** A free-form request whose reply `parse` turns into a result (retried once if unusable). Used by skill import review. */
+  complete?<T>(prompt: string, parse: (reply: string) => T, signal?: AbortSignal): Promise<T>;
 }
 
 /**

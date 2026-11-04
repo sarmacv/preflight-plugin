@@ -144,6 +144,15 @@ In the **Checks** tab, the **+** icon imports a skill from a `.md` file or a `.z
 - **General agent skills**, such as a `SKILL.md` with a `name`, a `description` and free-form instructions, become AI-reviewed checks. The full instructions are the rubric, and every text file in the skill's folder (references, templates, examples) is given to the AI with it.
 - **A zip can hold several skills:** each folder with a `SKILL.md` is one. You choose which to import.
 
+Before anything is saved, Preflight reviews each skill and shows the result as **Ready**, **Style issues**, **Likely duplicate** or **Invalid**, with the details:
+
+- **Format:** Preflight-format skills are fully validated. Missing sections, bad values or unknown rules make them invalid.
+- **Style:** general skills are checked for a description, enough instructions to judge against, clear pass/fail conditions, and referenced files that are missing from the import.
+- **Duplicates:** each skill is compared with every existing check by ID, name, the files its rules check, and the meaning of its name and description.
+- **AI review:** when an AI provider is available, it confirms or rejects each likely duplicate (with a reason). It can also rewrite a free-form skill into Preflight's five-section style with explicit pass/fail criteria, keeping the original attached as `original-SKILL.md`.
+
+Likely duplicates and invalid skills start unticked. For a duplicate you choose **Skip**, **Replace** (an earlier import only) or **Import anyway**.
+
 You then pick a category or create a new one, and for general skills, a severity. If an ID is already taken by a built-in check, the import gets a new ID; an earlier import can be replaced or kept alongside. Imported checks are kept in VS Code's storage for Preflight, so they survive updates. They show a package icon, and hovering one shows a remove button. Files in an import are only read, never run.
 
 ```markdown

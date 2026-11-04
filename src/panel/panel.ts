@@ -166,7 +166,13 @@ export class PreflightPanel implements vscode.Disposable {
   }
 
   private async importSkills(): Promise<void> {
-    const outcome = await importSkills(this.importedRoot, await this.skills, (m) => this.output.appendLine(m));
+    const skills = await this.skills;
+    // An AI-reviewed bundled check shows the AI the exact format to rewrite free-form skills into.
+    const example = (skills.find((s) => s.id === 'tech-standards') ?? skills.find((s) => s.origin === 'bundled'))?.source;
+    const outcome = await importSkills(this.importedRoot, skills, (m) => this.output.appendLine(m), {
+      provider: () => createProvider(this.provider, (m) => this.output.appendLine(m)),
+      example,
+    });
     if (!outcome) return;
     this.catalog = this.loadCatalog();
     await this.sendCatalog();

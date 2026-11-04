@@ -44,6 +44,10 @@ export class LmProvider implements ModelProvider {
     return this.askAndParse((m) => fixPrompt(skill, ctx, this.charBudget(m)), parseFix, 'AI fix', signal);
   }
 
+  async complete<T>(prompt: string, parse: (reply: string) => T, signal?: AbortSignal): Promise<T> {
+    return this.askAndParse(() => prompt, parse, 'AI review', signal);
+  }
+
   /** Asks, and if the reply can't be parsed asks once more saying what was wrong, before giving up. */
   private async askAndParse<T>(prompt: (m: vscode.LanguageModelChat) => string, parser: (text: string) => T, what: string, signal?: AbortSignal): Promise<T> {
     let problem = '';
